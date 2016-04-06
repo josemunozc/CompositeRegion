@@ -1,0 +1,25 @@
+parameter file: input.prm
+Available initial condition entries: 13
+Initial condition: 
+	Depth	Temperature (C)
+	0	18.9
+	0.025	18.934
+	0.125	19.731
+	0.825	16.447
+	0.875	16.554
+	1.025	16.303
+	1.175	16.044
+	1.375	15.854
+	1.875	15.192
+	3.875	12.096
+	7.875	10.911
+	12.875	10.953
+	20	11
+   Number of threads: 1
+   Number of active cells for temperature:       4096
+   Number of degrees of freedom for temperature: 4097
+	Available surface data lines: 100
+
+Time step 1		Ta:   18.50
+Time step 2		Ta:   18.50
+	 Job Done!!
