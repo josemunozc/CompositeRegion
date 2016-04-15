@@ -3,9 +3,9 @@
 # --------------------------------------------------
 # Time stepping control
 subsection time stepping
-  set timestep number max =   168  # maximum number of timesteps to execute
-  set time step           = 3600   # simulation time step
-  set theta scheme value  =    0.5
+  set timestep number max =   96                # maximum number of timesteps to execute (Multiply) 30*24*300
+  set time step           =   3600              # simulation time step (Devide) 3600/300 (300=5min*60sec)
+  set theta scheme value  =   0.5
 end
 
 # --------------------------------------------------
@@ -13,40 +13,60 @@ end
 # We are assuming a 1D domain with an insulation layer 
 # placed at some depth.
 #
-# domain depth        : x0 (0m)______________________________________________ xL (20m)
-# insulation depth    :        <- 1m ->|    |
-# insulation thickness:              ->|0.2m|<- 
+# domain depth        : x0 (0m)_____________________________________________________________________________________ xL (0.61)
+# insulation depth    :        <- 0.103m ->|    |
+# insulation thickness:                  ->|0.052m|<- 
+# point source depth:                         ->|0.156m|<-
 #
 # currently only homogeneous refinement is implemented 
 # number of cells is calculated as 2^n where n='refinement level'
 
 subsection geometric data
-  set domain size          = 100.0 # (m)
-  set insulation thickness =   0.5 # (m)
-  set insulation depth     =   1.0 # (m)
-  set point source depth   =  50.  # (m)
-  set refinement level     =  14
+  set domain size           =  0.610             # (m)
+  set material 0 thickness  =  0.105 		 # (m)
+  set material 0 depth      =  0.0 		 # (m)
+  set material 1 thickness  =  0.004 		 # (m)
+  set material 1 depth      =  0.105 		 # (m)
+  set material 2 thickness  =  0.043 		 # (m)
+  set material 2 depth      =  0.109 		 # (m)
+  set material 3 thickness  =  0.003 		 # (m)
+  set material 3 depth      =  0.152 		 # (m)
+  set material 4 thickness  =  0.455 		 # (m)
+  set material 4 depth      =  0.155 		 # (m)
+  set point source depth    =  0.156             # (m)
+  set refinement level      =  10
 end
 
 # --------------------------------------------------
 # Material data
-# currently only two materials implemented
+# currently only five materials implemented
 subsection material data
-  set soil thermal conductivity         =    1.2 # (W/mK)
-  set soil density                      = 1960.  # (kg/m3)
-  set soil specific heat capacity       =  840.  # (J/kgK)
-  set insulation thermal conductivity   =    1.2 #   0.034 # (W/mK)
-  set insulation density                = 1960.  #  30.    # (kg/m3)
-  set insulation specific heat capacity =  840.  #1130.    # (J/kgK)
+   set material 0 thermal conductivity       =    1.3259218789			# (W/mK) 1st layer of soil
+   set material 0 density       	     =    1.				# (kg/m3)
+   set material 0 specific heat capacity     =    2052289.21081842		# (J/kgK)
+   set material 1 thermal conductivity       =    0.22				# (W/mK) 1st layer of insulation
+   set material 1 density       	     =    1220.				# (kg/m3)
+   set material 1 specific heat capacity     =    1300.				# (J/kgK)
+   set material 2 thermal conductivity       =	  0.1222452016			# (W/mK) 2nd layer of insulation DRY CONDITION
+   set material 2 density                    =	  1279409.11685974		# (kg/m3)
+#   set material 2 thermal conductivity       =    0.8565572744			# (W/mK) 2nd layer of insulation SATURATED CONDITION
+#   set material 2 density		      =	   2714472.816437		# (kg/m3)
+   set material 2 specific heat capacity     =    1.				# (J/kgK)
+   set material 3 thermal conductivity       =    0.16				# (W/mK) 3rd layer of insulation
+   set material 3 density       	     =    1440.				# (kg/m3)
+   set material 3 specific heat capacity     =    900.				# (J/kgK)
+   set material 4 thermal conductivity       =    1.7042467943			# (W/mK) 2nd layer of soil
+   set material 4 density		     =    1.				# (kg/m3)
+   set material 4 specific heat capacity     =    3434730.74405812		# (J/kgK)
 end
 
 # --------------------------------------------------
 # Boundary conditions
 subsection boundary conditions
-  set fixed at bottom        = false #
-  set bottom fixed value     = 10.   # 
-  set fixed at top           = true  # currently only 'true' implemented
-  set point source           = true  # define if there is a point source in the domain
+  set fixed at bottom        = false  #
+  set bottom fixed value     = 22.    # 
+  set fixed at top           = true   # currently only 'true' implemented
+  set point source           = false  # define if there is a point source in the domain
   set top fixed value file   = surface_temperature.txt
   set initial condition file = initial_condition.txt
   set depths file            = depths.txt
