@@ -100,6 +100,15 @@ namespace TRL
     dof_handler(triangulation),
     fe(1)
   {
+    if (argc!=2)
+      {
+	std::cout << "Wrong number of input arguments.\n"
+		  << "Number of arguments passed: " << argc << "\n"
+		  << "Number of arguments expected: 2\n"
+		  << "Missing input file?\n" << std::endl;
+	throw 1;
+      }
+
     std::string input_filename = argv[1];
     std::cout << "parameter file: " << input_filename << "\n";
 
@@ -432,7 +441,7 @@ namespace TRL
     std::stringstream d;
     d << dim;
 
-    std::string filename = "/home/zerpiko/solution_"
+    std::string filename = "solution_"
       + d.str() + "d_time_"
       + t.str() + ".gp";
 
