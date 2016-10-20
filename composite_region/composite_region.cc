@@ -480,7 +480,7 @@ namespace TRL
     std::stringstream d;
     d << dim;
   
-    std::string filename = "/home/AboHassan/Documents/dealii-8.2.1/examples/composite_region/"
+    std::string filename = parameters.output_directory
       + d.str() + "d_time_"
       + t.str() + ".vtu";
   
