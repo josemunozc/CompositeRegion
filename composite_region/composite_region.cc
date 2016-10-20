@@ -157,6 +157,13 @@ namespace TRL
 	std::cout << "Error opening \"output_data.txt\" file\n";
 	throw 1;
       }
+
+    old_surface_temperature=0.;
+    new_surface_temperature=0.;
+    old_point_source_magnitude=0.;
+    new_point_source_magnitude=0.;
+    time=0.;
+    timestep_number=0;
   }
   //**************************************************************************************
   //--------------------------------------------------------------------------------------
@@ -315,34 +322,46 @@ namespace TRL
 	double thermal_heat_capacity = -1.E10;
 	double density               = -1.E10;
 	double cell_center = cell->center()[0];
-	if (cell_center > -1.* (parameters.material_0_depth + parameters.material_0_thickness)) /*LAYER 1*/
+	if (cell_center > -1.* (parameters.material_0_depth + parameters.material_0_thickness)) /*Soil LAYER 1*/
 	  {
 	    thermal_conductivity  = parameters.material_0_thermal_conductivity;
 	    thermal_heat_capacity = parameters.material_0_specific_heat_capacity;
 	    density               = parameters.material_0_density;
 	  }
 	else if (cell_center <= -1.* parameters.material_1_depth &&
-		 cell_center >  -1.*(parameters.material_1_depth + parameters.material_1_thickness)) /*LAYER 2*/
+		 cell_center >  -1.*(parameters.material_1_depth + parameters.material_1_thickness)) /*Insulation LAYER 1*/
 	  {
 	    thermal_conductivity    = parameters.material_1_thermal_conductivity;
 	    thermal_heat_capacity   = parameters.material_1_specific_heat_capacity;
 	    density                 = parameters.material_1_density;
 	  }
 	else if (cell_center <= -1.* parameters.material_2_depth &&
-		 cell_center >  -1.*(parameters.material_2_depth + parameters.material_2_thickness)) /*LAYER 3*/
+		 cell_center >  -1.*(parameters.material_2_depth + parameters.material_2_thickness)) /*Insulation LAYER 2*/
 	  {
 	    thermal_conductivity    = parameters.material_2_thermal_conductivity;
 	    thermal_heat_capacity   = parameters.material_2_specific_heat_capacity;
 	    density                 = parameters.material_2_density;
+
+			
+	    // We used it to fix thermal properties value after certain period of time
+	    /*
+	      if (timestep_number>=3240)
+	      {
+	      thermal_conductivity    = 0.1222452016 ;
+	      thermal_heat_capacity   = 1279409.11685974 ;
+	      density                 = 1.0 ;
+	      }
+	    */
+			
 	  }
 	else if (cell_center <= -1.* parameters.material_3_depth &&
-		 cell_center >  -1.*(parameters.material_3_depth + parameters.material_3_thickness)) /*LAYER 4*/
+		 cell_center >  -1.*(parameters.material_3_depth + parameters.material_3_thickness)) /*Insulation LAYER 3*/
 	  {
 	    thermal_conductivity    = parameters.material_3_thermal_conductivity;
 	    thermal_heat_capacity   = parameters.material_3_specific_heat_capacity;
 	    density                 = parameters.material_3_density;
 	  }
-	else if (cell_center <= -1.* parameters.material_4_depth)                                   /*LAYER 5*/
+	else if (cell_center <= -1.* parameters.material_4_depth)                                   /*Soil LAYER 2*/
 	  {
 	    thermal_conductivity  = parameters.material_4_thermal_conductivity;
 	    thermal_heat_capacity = parameters.material_4_specific_heat_capacity;
@@ -360,8 +379,14 @@ namespace TRL
 	      }
 	  }
 
+	double T=VectorTools::point_value(dof_handler,old_solution,
+					  Point<dim>(cell->center()[0]));
+	double h=11.6516607672; // W/m3K
+	double source = -1.*h*(T-22); //W/m3
+		
 	for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
 	  {
+		  
 	    /*
 	      Here is were we assemble the matrices and vectors that appear after
 	      we discretize the problem in space and time using the finite element
@@ -371,21 +396,35 @@ namespace TRL
 	      calculated in a more appropiated way.
 	    */
 	    for (unsigned int i=0; i<dofs_per_cell; ++i)
-	      for (unsigned int j=0; j<dofs_per_cell; ++j)
-		{
-		  cell_mass_matrix(i,j)       +=(thermal_heat_capacity * density *
-						 fe_values.shape_value (i,q_point) *
-						 fe_values.shape_value (j,q_point) *
-						 fe_values.JxW (q_point));
-		  cell_laplace_matrix_new(i,j)+=(thermal_conductivity *
-						 fe_values.shape_grad (i, q_point) *
-						 fe_values.shape_grad (j, q_point) *
-						 fe_values.JxW (q_point));
-		  cell_laplace_matrix_old(i,j)+=(thermal_conductivity *
-						 fe_values.shape_grad (i, q_point) *
-						 fe_values.shape_grad (j, q_point) *
-						 fe_values.JxW (q_point));
-		}
+	      {
+		for (unsigned int j=0; j<dofs_per_cell; ++j)
+		  {
+		    cell_mass_matrix(i,j)       +=(thermal_heat_capacity * density *
+						   fe_values.shape_value (i,q_point) *
+						   fe_values.shape_value (j,q_point) *
+						   fe_values.JxW (q_point));
+		    cell_laplace_matrix_new(i,j)+=(thermal_conductivity *
+						   fe_values.shape_grad (i, q_point) *
+						   fe_values.shape_grad (j, q_point) *
+						   fe_values.JxW (q_point));
+		    cell_laplace_matrix_old(i,j)+=(thermal_conductivity *
+						   fe_values.shape_grad (i, q_point) *
+						   fe_values.shape_grad (j, q_point) *
+						   fe_values.JxW (q_point));
+		  }
+
+			  
+		cell_rhs(i)+=
+		  source*theta_temperature*time_step*
+		  fe_values.shape_value (i,q_point) *
+		  fe_values.JxW (q_point)
+		  +
+		  source*(1-theta_temperature)*time_step*
+		  fe_values.shape_value (i,q_point) *
+		  fe_values.JxW (q_point)
+		  ;
+			  
+	      }
 	  }
 
 	cell->get_dof_indices (local_dof_indices);
@@ -430,24 +469,24 @@ namespace TRL
   void Heat_Pipe<dim>::output_results()
   {
     DataOut<dim> data_out;
-
+  
     data_out.attach_dof_handler(dof_handler);
     data_out.add_data_vector(solution,"solution");
     data_out.build_patches();
-
+  
     std::stringstream t;
     t << timestep_number;
-
+  
     std::stringstream d;
     d << dim;
-
-    std::string filename = "solution_"
+  
+    std::string filename = "/home/AboHassan/Documents/dealii-8.2.1/examples/composite_region/"
       + d.str() + "d_time_"
-      + t.str() + ".gp";
-
+      + t.str() + ".vtu";
+  
     std::ofstream output (filename.c_str());
-    data_out.write_gnuplot (output);
-
+    data_out.write_vtu (output);
+  
     // extract and save temperatures
     // at selected coordinates
     if (dim==1)
@@ -480,9 +519,9 @@ namespace TRL
 	  output_file << "\t" << std::setprecision(5) << temp_vector[i];
 	output_file << std::endl;
 	/*
-	  Estimate thermal energy (very simple method,
-	  you should improve it)
-	*/
+	//	Estimate thermal energy (very simple method,
+	//	you should improve it)
+	//*/
 	//		double thermal_energy=0.;
 	//		for (unsigned int i=0; i<depths_coordinates.size()-1; i++)
 	//		{
@@ -493,7 +532,7 @@ namespace TRL
 	//	      i would use insulation material properties.
 	//	      ELSE i would assume that the layer is
 	//	      composed of soil. This means that if you
-	//	      give coordinates to separated then it
+	//	      give coordinates too separated then it
 	//	      is very likely that the program assumes
 	//	      that everything is soil even if you are
 	//	      using an insulation layer. To avoid this,
@@ -508,7 +547,7 @@ namespace TRL
 	//				thermal_heat_capacity_density
 	//				= parameters.insulation_specific_heat_capacity *
 	//				parameters.insulation_density;
-	//
+	
 	//			thermal_energy +=
 	//					0.5*thermal_heat_capacity_density*
 	//					(depths_coordinates[i+1][2]-depths_coordinates[i][2])*
@@ -648,9 +687,7 @@ namespace TRL
 	      << initial_condition.size()    << std::endl
 	      << "Initial condition: \n\tDepth\tTemperature (C)\n";
     for (unsigned int i=0; i<initial_condition.size(); i++)
-      std::cout << "\t" << initial_condition[i][0]
-		<< "\t" << initial_condition[i][1]
-		<< std::endl;
+      std::cout << "\t" << initial_condition[i][0] << "\t" << initial_condition[i][1] << std::endl;
 
     VectorTools::project (dof_handler,
 			  hanging_node_constraints,
@@ -728,31 +765,29 @@ namespace TRL
       {
 	update_met_data();
 
+	
+	// double temperature_at_bottom=
+	//   VectorTools::point_value(dof_handler,solution,
+	// 			   Point<dim>(-1.*0.605));
+	// Point<dim> bottom(0.);
 
-	double temperature_at_bottom
-	  = VectorTools::point_value(dof_handler,solution,
-				     Point<dim>(-1.*0.605));
-	Point<dim> bottom(0.);
-
-	std::cout << "Time step " << timestep_number << "\t";
-	std::cout.setf( std::ios::fixed, std::ios::floatfield );
-	std::cout << "\tTa: " << std::setw(7) << std::setfill(' ') << std::setprecision(2)
-		  << new_surface_temperature
-		  << "\tTb: " << std::setw(7) << std::setfill(' ') << std::setprecision(2)
-		  << temperature_at_bottom
-		  << "\tM1: " << parameters.material_1_thermal_conductivity
-		  << std::endl;
+	// std::cout << "Time step " << timestep_number << "\t";
+	// std::cout.setf( std::ios::fixed, std::ios::floatfield );
+	// std::cout << "\tTa: " << std::setw(7) << std::setfill(' ') << std::setprecision(2) << new_surface_temperature
+	// 	  << "\tTb: " << std::setw(7) << std::setfill(' ') << std::setprecision(2) << temperature_at_bottom
+	// 	  << "\tM1: " << parameters.material_1_thermal_conductivity
+	// 	  << std::endl;
 
 	assemble_system_temperature();
 	solve_temperature();
 
-	if ((timestep_number==timestep_number_max)||
-	    (timestep_number==1)||
-	    (true))
+	if (parameters.output_frequency!=0)
+	  if (timestep_number%parameters.output_frequency==0)
+	    {
+	      std::cout << "Time step " << timestep_number << "\n";
+	      output_results();
+	    }
 
-	  //  if (( timestep_number>=1104) && (timestep_number<=timestep_number_max))
-
-	  output_results();
 	old_solution=solution;
       }
     output_file.close();
@@ -765,42 +800,42 @@ namespace TRL
 //**************************************************************************************
 int main (int argc, char *argv[])
 {
-	try
-	{
-		using namespace TRL;
-		using namespace dealii;
-		{
-			deallog.depth_console (0);
+  try
+    {
+      using namespace TRL;
+      using namespace dealii;
+      {
+	deallog.depth_console (0);
 
-			Heat_Pipe<1> laplace_problem(argc,argv);
+	Heat_Pipe<1> laplace_problem(argc,argv);
 
-			laplace_problem.run();
-		}
-	}
-	catch (std::exception &exc)
-	{
-		std::cerr << std::endl << std::endl
-				<< "----------------------------------------------------"
-				<< std::endl;
-		std::cerr << "Exception on processing: " << std::endl
-				<< exc.what() << std::endl
-				<< "Aborting!" << std::endl
-				<< "----------------------------------------------------"
-				<< std::endl;
+	laplace_problem.run();
+      }
+    }
+  catch (std::exception &exc)
+    {
+      std::cerr << std::endl << std::endl
+		<< "----------------------------------------------------"
+		<< std::endl;
+      std::cerr << "Exception on processing: " << std::endl
+		<< exc.what() << std::endl
+		<< "Aborting!" << std::endl
+		<< "----------------------------------------------------"
+		<< std::endl;
 
-		return 1;
-	}
-	catch (...)
-	{
-		std::cerr << std::endl << std::endl
-				<< "----------------------------------------------------"
-				<< std::endl;
-		std::cerr << "Unknown exception!" << std::endl
-				<< "Aborting!" << std::endl
-				<< "----------------------------------------------------"
-				<< std::endl;
-		return 1;
-	}
+      return 1;
+    }
+  catch (...)
+    {
+      std::cerr << std::endl << std::endl
+		<< "----------------------------------------------------"
+		<< std::endl;
+      std::cerr << "Unknown exception!" << std::endl
+		<< "Aborting!" << std::endl
+		<< "----------------------------------------------------"
+		<< std::endl;
+      return 1;
+    }
 
-	return 0;
+  return 0;
 }
