@@ -425,18 +425,7 @@ void Heat_Pipe<dim>::assemble_system_temperature()
 				(1-theta_temperature)*time_step
 				+
 				new_point_source_magnitude* // (W/m3)
-				(  theta_temperature)*time_step,tmp);			total_volumetric_heat_capacity=
-						(1.-degree_of_saturation_ice)*
-						(porosity*degree_of_saturation*specific_heat_capacity_liquids*density_liquids)
-						+(porosity*specific_heat_capacity_gas*density_gas*(1.-degree_of_saturation))
-						+(specific_heat_capacity_solids*density_solids*(1.-porosity))
-						+(porosity*degree_of_saturation*degree_of_saturation_ice*specific_heat_capacity_ice*density_ice)
-						+
-						porosity*derivative_degree_of_saturation_ice*
-						((cell_temperature-reference_temperature)*
-								(degree_of_saturation*density_ice*specific_heat_capacity_ice
-										-degree_of_saturation*density_liquids*specific_heat_capacity_liquids)
-										-degree_of_saturation*density_ice*latent_heat_of_fusion);
+				(  theta_temperature)*time_step,tmp);
 	}
 	//--------------------------------------------------------
 	mass_matrix.vmult        ( tmp,old_solution);
@@ -779,6 +768,19 @@ void Heat_Pipe<dim>::run()
 			time+=time_step, ++timestep_number)
 	{
 		update_met_data();
+
+		// double temperature_at_bottom=
+		//   VectorTools::point_value(dof_handler,solution,
+		// 			   Point<dim>(-1.*0.605));
+		// Point<dim> bottom(0.);
+
+		// std::cout << "Time step " << timestep_number << "\t";
+		// std::cout.setf( std::ios::fixed, std::ios::floatfield );
+		// std::cout << "\tTa: " << std::setw(7) << std::setfill(' ') << std::setprecision(2) << new_surface_temperature
+		// 	  << "\tTb: " << std::setw(7) << std::setfill(' ') << std::setprecision(2) << temperature_at_bottom
+		// 	  << "\tM1: " << parameters.material_1_thermal_conductivity
+		// 	  << std::endl;
+
 		assemble_system_temperature();
 		solve_temperature();
 
