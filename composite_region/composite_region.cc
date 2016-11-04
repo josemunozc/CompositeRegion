@@ -1,7 +1,3 @@
-/*
-  Test No.3
- */
-
 #include <deal.II/base/multithread_info.h>  
 #include <deal.II/base/parameter_handler.h>
 
@@ -16,7 +12,7 @@
 
 #include <deal.II/lac/vector.h>
 #include <deal.II/lac/full_matrix.h>
-#include <deal.II/lac/compressed_sparsity_pattern.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/sparse_matrix.h>   
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/precondition.h>
@@ -31,7 +27,7 @@
 #include <sstream> 
 #include <string>
 #include <vector>
-#include "data_tools.h"
+#include <DataTools.h>
 namespace TRL
 {
 using namespace dealii;
@@ -50,8 +46,6 @@ private:
 	void read_grid_temperature();
 	void setup_system_temperature();
 	void assemble_system_temperature();
-	void assemble_system_interval_temperature(const typename DoFHandler<dim>::active_cell_iterator &begin,
-			const typename DoFHandler<dim>::active_cell_iterator &end);
 	void solve_temperature();
 	void initial_condition_temperature();
 
@@ -95,9 +89,7 @@ private:
 
 	std::ofstream output_file;
 };
-//**************************************************************************************
-//----------------------------------CONSTRUCTOR-----------------------------------------
-//**************************************************************************************
+
 template<int dim>
 Heat_Pipe<dim>::Heat_Pipe(int argc, char *argv[])
 :
@@ -137,7 +129,8 @@ fe(1)
 	std::vector< std::string >         filenames;
 	filenames.push_back(parameters.depths_file);
 
-	read_data (filenames,
+	DataTools data_tools;
+	data_tools.read_data (filenames,
 			dummy_matrix,
 			depths_coordinates,
 			false);
@@ -169,17 +162,13 @@ fe(1)
 	time=0.;
 	timestep_number=0;
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template<int dim>
 Heat_Pipe<dim>::~Heat_Pipe ()
 {
 	dof_handler.clear ();
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template <int dim>
 void Heat_Pipe<dim>::read_grid_temperature()
 {
@@ -187,9 +176,7 @@ void Heat_Pipe<dim>::read_grid_temperature()
 	triangulation.refine_global (parameters.refinement_level);
 	dof_handler.distribute_dofs (fe);
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template <int dim>
 void Heat_Pipe<dim>::setup_system_temperature()
 {
@@ -198,7 +185,7 @@ void Heat_Pipe<dim>::setup_system_temperature()
 			hanging_node_constraints);
 	hanging_node_constraints.close ();
 
-	CompressedSparsityPattern csp  (dof_handler.n_dofs(),
+	DynamicSparsityPattern csp(dof_handler.n_dofs(),
 			dof_handler.n_dofs());
 
 	DoFTools::make_sparsity_pattern (dof_handler, csp);
@@ -206,9 +193,7 @@ void Heat_Pipe<dim>::setup_system_temperature()
 	hanging_node_constraints.condense (csp);
 	sparsity_pattern.copy_from (csp);
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template <int dim>
 void Heat_Pipe<dim>::assemble_system_temperature()
 {
@@ -218,28 +203,216 @@ void Heat_Pipe<dim>::assemble_system_temperature()
 	laplace_matrix_new.reinit (sparsity_pattern);
 	laplace_matrix_old.reinit (sparsity_pattern);
 
-	const unsigned int n_threads = multithread_info.n_threads();
-	Threads::ThreadGroup<> threads;
-	typedef typename DoFHandler<dim>::active_cell_iterator active_cell_iterator;
-	std::vector<std::pair<active_cell_iterator,active_cell_iterator> >
-	thread_ranges
-	= Threads::split_range<active_cell_iterator> (dof_handler.begin_active (),
-			dof_handler.end (),
-			n_threads);
-	for (unsigned int thread=0; thread<n_threads; ++thread)
-		threads += Threads::new_thread (&Heat_Pipe::assemble_system_interval_temperature,
-				*this,
-				thread_ranges[thread].first,
-				thread_ranges[thread].second);
-	threads.join_all ();
+	//---------------------------------------------
+	QGauss<dim>   quadrature_formula(3);
+	FEValues<dim> fe_values(fe, quadrature_formula,
+			update_values | update_gradients |update_JxW_values);
+	const unsigned int dofs_per_cell   = fe.dofs_per_cell;
+	const unsigned int n_q_points      = quadrature_formula.size();
+
+	FullMatrix<double> cell_mass_matrix        (dofs_per_cell,dofs_per_cell);
+	FullMatrix<double> cell_laplace_matrix_new (dofs_per_cell,dofs_per_cell);
+	FullMatrix<double> cell_laplace_matrix_old (dofs_per_cell,dofs_per_cell);
+	Vector<double>     cell_rhs                (dofs_per_cell);
+
+	std::vector<unsigned int> local_dof_indices (fe.dofs_per_cell);
+
+	typename DoFHandler<dim>::active_cell_iterator
+	cell = dof_handler.begin_active(),
+	endc = dof_handler.end();
+	for (; cell!=endc; ++cell)
+	{
+		fe_values.reinit (cell);
+		cell_mass_matrix        = 0;
+		cell_laplace_matrix_new = 0;
+		cell_laplace_matrix_old = 0;
+		cell_rhs                = 0;
+
+		/*
+		 * We are assuming that each layer is composed of three fractions: solid, liquid, frozen liquid,
+		 * and gas. At the moment, the assumption is that liquid is water, frozen liquid is ice and gas
+		 * is air for all layers. Solids can vary, in out particular case, at least one layer has a
+		 * different kind of solids.
+		 *
+		 * Porosity and degree of saturation is also layer dependent. Thus, fractions are layer
+		 * dependent.
+		 *
+		 * Thermal properties can be considered equal for liquids and gas fractions but not for solids
+		 * across the layers.
+		 *
+		 * NOTE that at the moment there are two layers composed of a single element (plastic lids)
+		 * the thermal properties of these layers are calculated in a different way until we think of
+		 * a way of homogenize the code.
+		 * */
+
+		double thermal_conductivity           = -1.E10;
+		double total_volumetric_heat_capacity = -1.E10;
+		double source                         = -1.E10;
+		{
+			double specific_heat_capacity_liquids = parameters.specific_heat_capacity_liquids;
+			double specific_heat_capacity_ice     = parameters.specific_heat_capacity_ice;
+			double specific_heat_capacity_gas     = parameters.specific_heat_capacity_air;
+			double density_liquids                = parameters.density_liquids;
+			double density_ice                    = parameters.density_ice;
+			double density_gas                    = parameters.density_air;
+
+			double freezing_point       =parameters.freezing_point;
+			double reference_temperature=parameters.reference_temperature;
+			double coefficient_alpha    =parameters.alpha;
+			double latent_heat_of_fusion=parameters.latent_heat;
+
+			double cell_center=
+					cell->center()[0];
+			double cell_temperature=
+					VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell->center()[0]));
+			double h=11.6516607672; // W/m3K
+			source=0.;//-1.*h*(cell_temperature-/*parameters.initial_temperature*/22); //W/m3
+
+			double degree_of_saturation_ice           =0.;
+			double derivative_degree_of_saturation_ice=0.;
+			if (cell_temperature<=freezing_point)
+			{
+				degree_of_saturation_ice=
+						1.-pow(1.-(cell_temperature-freezing_point),coefficient_alpha);
+				derivative_degree_of_saturation_ice=
+						-1.*coefficient_alpha*pow(1.-(cell_temperature-freezing_point),coefficient_alpha-1.);
+			}
+
+			double specific_heat_capacity_solids=-1.E10;
+			double density_solids=-1.E-10;
+			double porosity=-1.E10;
+			double degree_of_saturation=-1.-10;
+			if (cell_center>-1.*(parameters.material_0_depth+parameters.material_0_thickness))/*layer 0*/
+			{
+				thermal_conductivity          =	parameters.material_0_thermal_conductivity;
+				specific_heat_capacity_solids = parameters.material_0_specific_heat_capacity;
+				density_solids                = parameters.material_0_density;
+				porosity                      = parameters.material_0_porosity;
+				degree_of_saturation          = parameters.material_0_degree_of_saturation;
+			}
+			else if (cell_center<=-1.*parameters.material_1_depth &&
+					cell_center>-1.*(parameters.material_1_depth+parameters.material_1_thickness))/*layer 1*/
+			{
+				thermal_conductivity          =	parameters.material_1_thermal_conductivity;
+				specific_heat_capacity_solids = parameters.material_1_specific_heat_capacity;
+				density_solids                = parameters.material_1_density;
+				porosity                      = parameters.material_1_porosity;
+				degree_of_saturation          = parameters.material_1_degree_of_saturation;
+			}
+			else if (cell_center<=-1.* parameters.material_2_depth &&
+					cell_center>-1.*(parameters.material_2_depth+parameters.material_2_thickness))/*layer 2*/
+			{
+				thermal_conductivity          = parameters.material_2_thermal_conductivity;
+				specific_heat_capacity_solids = parameters.material_2_specific_heat_capacity;
+				density_solids                = parameters.material_2_density;
+				porosity                      = parameters.material_2_porosity;
+				degree_of_saturation          = parameters.material_2_degree_of_saturation;
+			}
+			else if (cell_center<=-1.* parameters.material_3_depth &&
+					cell_center>-1.*(parameters.material_3_depth+parameters.material_3_thickness))/*layer 3*/
+			{
+				thermal_conductivity          =	parameters.material_3_thermal_conductivity;
+				specific_heat_capacity_solids = parameters.material_3_specific_heat_capacity;
+				density_solids                = parameters.material_3_density;
+				porosity                      = parameters.material_3_porosity;
+				degree_of_saturation          = parameters.material_3_degree_of_saturation;
+			}
+			else if (cell_center<=-1.*parameters.material_4_depth)/*layer 4*/
+			{
+				thermal_conductivity          = parameters.material_4_thermal_conductivity;
+				specific_heat_capacity_solids = parameters.material_4_specific_heat_capacity;
+				density_solids                = parameters.material_4_density;
+				porosity                      = parameters.material_4_porosity;
+				degree_of_saturation          = parameters.material_4_degree_of_saturation;
+			}
+			else
+			{
+				std::cout << "Error. Cell center not found." << std::endl;
+				throw -1;
+			}
+
+			total_volumetric_heat_capacity=
+					(1.-degree_of_saturation_ice)*
+					(porosity*degree_of_saturation*specific_heat_capacity_liquids*density_liquids)
+					+(porosity*specific_heat_capacity_gas*density_gas*(1.-degree_of_saturation))
+					+(specific_heat_capacity_solids*density_solids*(1.-porosity))
+					+(porosity*degree_of_saturation*degree_of_saturation_ice*specific_heat_capacity_ice*density_ice)
+					+
+					porosity*derivative_degree_of_saturation_ice*
+					((cell_temperature-reference_temperature)*
+							(degree_of_saturation*density_ice*specific_heat_capacity_ice
+									-degree_of_saturation*density_liquids*specific_heat_capacity_liquids)
+									-degree_of_saturation*density_ice*latent_heat_of_fusion);
+
+			if (thermal_conductivity<0. || total_volumetric_heat_capacity<0.)
+			{
+				std::cout << "thermal_conductivity: " << thermal_conductivity << "\t"
+						<< "total_volumetric_heat_capacity: "<< total_volumetric_heat_capacity << std::endl;
+				throw -1;
+			}
+		}
+
+		for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+		{
+			/*
+			 * Here is were we assemble the matrices and vectors that appear after
+			 * we discretize the problem in space and time using the finite element
+			 * method. And here is also were we need to put any sinks or sources we
+			 * want to implement. For the moment the magnitud of the source is user
+			 * defined (by an external file). But at some point this must be
+			 * calculated in a more appropiated way.
+			 */
+			for (unsigned int i=0; i<dofs_per_cell; ++i)
+			{
+				for (unsigned int j=0; j<dofs_per_cell; ++j)
+				{
+					cell_mass_matrix(i,j)+=
+							total_volumetric_heat_capacity*
+							fe_values.shape_value(i,q_point) *
+							fe_values.shape_value(j,q_point) *
+							fe_values.JxW(q_point);
+					cell_laplace_matrix_new(i,j)+=(thermal_conductivity *
+							fe_values.shape_grad(i,q_point) *
+							fe_values.shape_grad(j,q_point) *
+							fe_values.JxW(q_point));
+					cell_laplace_matrix_old(i,j)+=(thermal_conductivity *
+							fe_values.shape_grad(i,q_point) *
+							fe_values.shape_grad(j,q_point) *
+							fe_values.JxW(q_point));
+				}
+				cell_rhs(i)+=
+						source*theta_temperature*time_step*
+						fe_values.shape_value(i,q_point) *
+						fe_values.JxW(q_point)
+						+
+						source*(1-theta_temperature)*time_step*
+						fe_values.shape_value(i,q_point) *
+						fe_values.JxW(q_point);
+			}
+		}
+
+		cell->get_dof_indices (local_dof_indices);
+
+		for (unsigned int i=0; i<dofs_per_cell; ++i)
+		{
+			for (unsigned int j=0; j<dofs_per_cell; ++j)
+			{
+				laplace_matrix_new.add (local_dof_indices[i],local_dof_indices[j],cell_laplace_matrix_new(i,j));
+				laplace_matrix_old.add (local_dof_indices[i],local_dof_indices[j],cell_laplace_matrix_old(i,j));
+				mass_matrix.add        (local_dof_indices[i],local_dof_indices[j],cell_mass_matrix(i,j)       );
+			}
+			system_rhs(local_dof_indices[i]) += cell_rhs(i);
+		}
+	}
+	//---------------------------------------------
 
 	Vector<double> tmp      (solution.size ());
 
 	/*
       This is the section where the point source is included.
-      Notice that there are other ways to do this, but the 
+      Notice that there are other ways to do this, but the
       library has a function that is intended exactly for this
-      kind of problem. Check the documentation of 
+      kind of problem. Check the documentation of
       'create_point_source_vector' in deal.ii
 	 */
 	if (parameters.point_source==true)
@@ -252,8 +425,18 @@ void Heat_Pipe<dim>::assemble_system_temperature()
 				(1-theta_temperature)*time_step
 				+
 				new_point_source_magnitude* // (W/m3)
-				(  theta_temperature)*time_step
-				,tmp);
+				(  theta_temperature)*time_step,tmp);			total_volumetric_heat_capacity=
+						(1.-degree_of_saturation_ice)*
+						(porosity*degree_of_saturation*specific_heat_capacity_liquids*density_liquids)
+						+(porosity*specific_heat_capacity_gas*density_gas*(1.-degree_of_saturation))
+						+(specific_heat_capacity_solids*density_solids*(1.-porosity))
+						+(porosity*degree_of_saturation*degree_of_saturation_ice*specific_heat_capacity_ice*density_ice)
+						+
+						porosity*derivative_degree_of_saturation_ice*
+						((cell_temperature-reference_temperature)*
+								(degree_of_saturation*density_ice*specific_heat_capacity_ice
+										-degree_of_saturation*density_liquids*specific_heat_capacity_liquids)
+										-degree_of_saturation*density_ice*latent_heat_of_fusion);
 	}
 	//--------------------------------------------------------
 	mass_matrix.vmult        ( tmp,old_solution);
@@ -293,239 +476,7 @@ void Heat_Pipe<dim>::assemble_system_temperature()
 				system_rhs);
 	}
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
-template <int dim>
-void Heat_Pipe<dim>::assemble_system_interval_temperature(const typename DoFHandler<dim>::active_cell_iterator &begin,
-		const typename DoFHandler<dim>::active_cell_iterator &end)
-		{
-	QGauss<dim>   quadrature_formula(3);
-	FEValues<dim> fe_values(fe, quadrature_formula,
-			update_values | update_gradients |update_JxW_values);
-	const unsigned int dofs_per_cell   = fe.dofs_per_cell;
-	const unsigned int n_q_points      = quadrature_formula.size();
 
-	FullMatrix<double> cell_mass_matrix        (dofs_per_cell,dofs_per_cell);
-	FullMatrix<double> cell_laplace_matrix_new (dofs_per_cell,dofs_per_cell);
-	FullMatrix<double> cell_laplace_matrix_old (dofs_per_cell,dofs_per_cell);
-	Vector<double>     cell_rhs                (dofs_per_cell);
-
-	std::vector<unsigned int> local_dof_indices (fe.dofs_per_cell);
-
-	typename DoFHandler<dim>::active_cell_iterator cell;
-	for (cell=begin; cell!=end; ++cell)
-	{
-		fe_values.reinit (cell);
-		cell_mass_matrix        = 0;
-		cell_laplace_matrix_new = 0;
-		cell_laplace_matrix_old = 0;
-		cell_rhs                = 0;
-
-		double thermal_conductivity                         = -1.E10;
-		double thermal_heat_capacity                        = -1.E10;
-		double density                                      = -1.E10;
-		double cell_center                                  = cell->center()[0];
-		double material_0_volumetric_heat_capacity          = -1.E10;
-		double material_0_modified_volumetric_heat_capacity = -1.E10;
-		double material_1_volumetric_heat_capacity          = -1.E10;
-		double material_2_volumetric_heat_capacity          = -1.E10;
-		double material_2_modified_volumetric_heat_capacity = -1.E10;
-		double material_3_volumetric_heat_capacity          = -1.E10;
-		double material_4_volumetric_heat_capacity          = -1.E10;
-		double material_4_modified_volumetric_heat_capacity = -1.E10;
-		double degree_of_saturation_ice                     = 0;
-
-		double cell_temperature=
-				VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell->center()[0]));
-		double h=11.6516607672; // W/m3K
-		double source=-1.*h*(cell_temperature-parameters.initial_temperature); //W/m3
-
-		if (cell_temperature <= parameters.freezing_point)
-		{
-			degree_of_saturation_ice=
-					1.-pow(1.-(cell_temperature-parameters.freezing_point),parameters.alpha);
-		}
-
-		if (cell_center>-1.*(parameters.material_0_depth+parameters.material_0_thickness))/*Soil LAYER 1*/
-		{
-			thermal_conductivity  = parameters.material_0_thermal_conductivity;
-			thermal_heat_capacity = parameters.material_0_specific_heat_capacity;
-			density               = parameters.material_0_density;
-			material_0_volumetric_heat_capacity=
-					(1.-degree_of_saturation_ice)*
-					(parameters.material_0_porosity*parameters.material_0_degree_of_saturation*
-							parameters.specific_capacity_liquids*parameters.density_liquids)
-					+(parameters.material_0_porosity*parameters.material_0_degree_of_saturation*
-							degree_of_saturation_ice*parameters.specific_capacity_ice*parameters.density_ice)
-					+(parameters.material_0_porosity*parameters.specific_capacity_air*
-							parameters.density_air*(1.-parameters.material_0_degree_of_saturation))
-					+(parameters.material_0_specific_heat_capacity*parameters.material_0_density*
-							(1.-parameters.material_0_porosity));
-
-			material_0_modified_volumetric_heat_capacity=
-					material_0_volumetric_heat_capacity+((parameters.material_0_degree_of_saturation*
-							parameters.density_ice * parameters.specific_capacity_ice
-					-parameters.material_0_degree_of_saturation*parameters.density_liquids*
-					parameters.specific_capacity_liquids)*(cell_temperature - parameters.reference_temperature)
-					-parameters.material_0_degree_of_saturation*parameters.density_ice*parameters.latent_heat)*
-					(parameters.material_0_porosity);
-		}
-		else if (cell_center<=-1.*parameters.material_1_depth &&
-				cell_center>-1.*(parameters.material_1_depth+parameters.material_1_thickness))/*Insulation LAYER 1*/
-		{
-			thermal_conductivity  = parameters.material_1_thermal_conductivity;
-			thermal_heat_capacity = parameters.material_1_specific_heat_capacity;
-			density               = parameters.material_1_density;
-			material_1_volumetric_heat_capacity=
-					(parameters.material_1_thermal_conductivity*parameters.material_1_specific_heat_capacity);
-		}
-		else if (cell_center<=-1.* parameters.material_2_depth &&
-				cell_center>-1.*(parameters.material_2_depth+parameters.material_2_thickness))/*Insulation LAYER 2*/
-		{
-			thermal_conductivity  = parameters.material_2_thermal_conductivity;
-			thermal_heat_capacity = parameters.material_2_specific_heat_capacity;
-			density               = parameters.material_2_density;
-			material_2_volumetric_heat_capacity=
-					(1.-degree_of_saturation_ice)*
-					(parameters.material_2_porosity*parameters.material_2_degree_of_saturation*
-							parameters.specific_capacity_liquids*parameters.density_liquids)
-					+(parameters.material_2_porosity*parameters.material_2_degree_of_saturation*
-							degree_of_saturation_ice*parameters.specific_capacity_ice*parameters.density_ice)
-					+(parameters.material_2_porosity*parameters.specific_capacity_air*
-							parameters.density_air*(1-parameters.material_2_degree_of_saturation))
-					+(parameters.material_2_specific_heat_capacity*parameters.material_2_density*
-							(1-parameters.material_2_porosity));
-
-			material_2_modified_volumetric_heat_capacity=
-					material_2_volumetric_heat_capacity+((parameters.material_2_degree_of_saturation*
-							parameters.density_ice*parameters.specific_capacity_ice
-					-parameters.material_2_degree_of_saturation*parameters.density_liquids*
-					parameters.specific_capacity_liquids)*(cell_temperature - parameters.reference_temperature)
-					-parameters.material_2_degree_of_saturation*parameters.density_ice*parameters.latent_heat)*
-					(parameters.material_2_porosity);
-
-			// We used it to fix thermal properties value after certain period of time
-			/*
-	      if (timestep_number>=3240)
-	      {
-	      thermal_conductivity    = 0.1222452016 ;
-	      thermal_heat_capacity   = 1279409.11685974 ;
-	      density                 = 1.0 ;
-	      }
-			 */
-
-		}
-		else if (cell_center<=-1.* parameters.material_3_depth &&
-				cell_center>-1.*(parameters.material_3_depth+parameters.material_3_thickness))/*Insulation LAYER 3*/
-		{
-			thermal_conductivity  = parameters.material_3_thermal_conductivity;
-			thermal_heat_capacity = parameters.material_3_specific_heat_capacity;
-			density               = parameters.material_3_density;
-			material_3_volumetric_heat_capacity=
-					(parameters.material_3_thermal_conductivity*parameters.material_3_specific_heat_capacity);
-		}
-		else if (cell_center<=-1.*parameters.material_4_depth)/*Soil LAYER 2*/
-		{
-			thermal_conductivity  = parameters.material_4_thermal_conductivity;
-			thermal_heat_capacity = parameters.material_4_specific_heat_capacity;
-			density               = parameters.material_4_density;
-			material_4_volumetric_heat_capacity=
-					(1.-degree_of_saturation_ice) *
-					(parameters.material_4_porosity*parameters.material_4_degree_of_saturation*
-							parameters.specific_capacity_liquids*parameters.density_liquids)
-					+(parameters.material_4_porosity*parameters.material_4_degree_of_saturation*
-							degree_of_saturation_ice*parameters.specific_capacity_ice*parameters.density_ice)
-					+(parameters.material_4_porosity*parameters.specific_capacity_air*
-							parameters.density_air*(1-parameters.material_4_degree_of_saturation))
-					+(parameters.material_4_specific_heat_capacity*parameters.material_4_density*
-							(1-parameters.material_4_porosity));
-
-			material_4_modified_volumetric_heat_capacity=
-					material_4_volumetric_heat_capacity+((parameters.material_4_degree_of_saturation*
-							parameters.density_ice*parameters.specific_capacity_ice
-					-parameters.material_4_degree_of_saturation*parameters.density_liquids*
-					parameters.specific_capacity_liquids)*(cell_temperature-parameters.reference_temperature)
-					-parameters.material_4_degree_of_saturation*parameters.density_ice*parameters.latent_heat)*
-					(parameters.material_4_porosity);
-		}
-		else
-		{
-			if (thermal_conductivity<0. || density<0. || thermal_heat_capacity<0.)
-			{
-				std::cout << "Error. Center not found.\t"
-						<< "Cell center: " << cell->center()[0] << "\t"
-						<< "thermal_conductivity: " << thermal_conductivity << "\t"
-						<< "thermal_heat_capacity: " << thermal_heat_capacity << "\t"
-						<< "density: " << density << std::endl;
-			}
-		}
-
-		for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
-		{
-			double total_volumetric_heat_capacity =  -1.E10;
-			total_volumetric_heat_capacity = material_0_modified_volumetric_heat_capacity + material_1_volumetric_heat_capacity + material_2_modified_volumetric_heat_capacity
-					+ material_3_volumetric_heat_capacity + material_4_modified_volumetric_heat_capacity;
-
-			/*
-	      Here is were we assemble the matrices and vectors that appear after
-	      we discretize the problem in space and time using the finite element
-	      method. And here is also were we need to put any sinks or sources we
-	      want to implement. For the moment the magnitud of the source is user
-	      defined (by an external file). But at some point this must be
-	      calculated in a more appropiated way.
-			 */
-			for (unsigned int i=0; i<dofs_per_cell; ++i)
-			{
-				for (unsigned int j=0; j<dofs_per_cell; ++j)
-				{
-					cell_mass_matrix(i,j)+=
-							((total_volumetric_heat_capacity*parameters.alpha*
-									pow(1.-(cell_temperature-parameters.freezing_point),parameters.alpha-1.))*
-							fe_values.shape_value(i,q_point) *
-							fe_values.shape_value(j,q_point) *
-							fe_values.JxW(q_point));
-					cell_laplace_matrix_new(i,j)+=(thermal_conductivity *
-							fe_values.shape_grad(i,q_point) *
-							fe_values.shape_grad(j,q_point) *
-							fe_values.JxW(q_point));
-					cell_laplace_matrix_old(i,j)+=(thermal_conductivity *
-							fe_values.shape_grad(i,q_point) *
-							fe_values.shape_grad(j,q_point) *
-							fe_values.JxW(q_point));
-				}
-
-				cell_rhs(i)+=
-						source*theta_temperature*time_step*
-						fe_values.shape_value(i,q_point) *
-						fe_values.JxW(q_point)
-						+
-						source*(1-theta_temperature)*time_step*
-						fe_values.shape_value(i,q_point) *
-						fe_values.JxW(q_point);
-			}
-		}
-
-		cell->get_dof_indices (local_dof_indices);
-
-		assembler_lock.acquire ();
-
-		for (unsigned int i=0; i<dofs_per_cell; ++i)
-		{
-			for (unsigned int j=0; j<dofs_per_cell; ++j)
-			{
-				laplace_matrix_new.add (local_dof_indices[i],local_dof_indices[j],cell_laplace_matrix_new(i,j));
-				laplace_matrix_old.add (local_dof_indices[i],local_dof_indices[j],cell_laplace_matrix_old(i,j));
-				mass_matrix.add        (local_dof_indices[i],local_dof_indices[j],cell_mass_matrix(i,j)       );
-			}
-			system_rhs(local_dof_indices[i]) += cell_rhs(i);
-		}
-		assembler_lock.release ();
-	}
-		}
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
 template <int dim>
 void Heat_Pipe<dim>::solve_temperature()
 {
@@ -541,9 +492,7 @@ void Heat_Pipe<dim>::solve_temperature()
 
 	hanging_node_constraints.distribute (solution);
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template <int dim>
 void Heat_Pipe<dim>::output_results()
 {
@@ -652,9 +601,7 @@ void Heat_Pipe<dim>::output_results()
 
 	}
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template <int dim>
 void Heat_Pipe<dim>::update_met_data ()
 {
@@ -668,9 +615,10 @@ void Heat_Pipe<dim>::update_met_data ()
 	 */
 	if (met_data.size()==0)
 	{
+		DataTools data_tools;
 		std::vector<std::string> filenames;
 		filenames.push_back(parameters.top_fixed_value_file);
-		read_data (filenames,
+		data_tools.read_data (filenames,
 				date_and_time,
 				met_data,
 				false);
@@ -683,7 +631,7 @@ void Heat_Pipe<dim>::update_met_data ()
 			std::vector< std::vector<int> > dummy;
 			filenames.clear();
 			filenames.push_back(parameters.point_source_file);
-			read_data (filenames,
+			data_tools.read_data (filenames,
 					dummy,
 					point_source_magnitudes,
 					false);
@@ -702,9 +650,7 @@ void Heat_Pipe<dim>::update_met_data ()
 		new_point_source_magnitude = point_source_magnitudes [timestep_number  ][1];
 	}
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template <int dim>
 void Heat_Pipe<dim>::initial_condition_temperature()
 {
@@ -723,7 +669,8 @@ void Heat_Pipe<dim>::initial_condition_temperature()
 	 */
 	std::vector< std::vector<int> > dummy_matrix;
 	std::vector< std::vector<double> > initial_condition;
-	read_data (filenames,
+	DataTools data_tools;
+	data_tools.read_data (filenames,
 			dummy_matrix,
 			initial_condition,
 			false);
@@ -781,9 +728,7 @@ void Heat_Pipe<dim>::initial_condition_temperature()
 	// 			  old_solution);
 	solution=old_solution;
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 template <int dim>
 void Heat_Pipe<dim>::run()
 {
@@ -792,15 +737,6 @@ void Heat_Pipe<dim>::run()
 	solution.reinit (dof_handler.n_dofs());
 	old_solution.reinit (dof_handler.n_dofs());
 	initial_condition_temperature();
-
-	const unsigned int n_threads = multithread_info.n_threads();
-	std::cout << "\tNumber of threads: " << n_threads << std::endl;
-	std::cout << "\tNumber of active cells for temperature:       "
-			<< triangulation.n_active_cells()
-			<< std::endl;
-	std::cout << "\tNumber of degrees of freedom for temperature: "
-			<< dof_handler.n_dofs()
-			<< std::endl;
 
 	{
 		std::cout.setf( std::ios::fixed);
@@ -843,20 +779,6 @@ void Heat_Pipe<dim>::run()
 			time+=time_step, ++timestep_number)
 	{
 		update_met_data();
-
-
-		// double temperature_at_bottom=
-		//   VectorTools::point_value(dof_handler,solution,
-		// 			   Point<dim>(-1.*0.605));
-		// Point<dim> bottom(0.);
-
-		// std::cout << "Time step " << timestep_number << "\t";
-		// std::cout.setf( std::ios::fixed, std::ios::floatfield );
-		// std::cout << "\tTa: " << std::setw(7) << std::setfill(' ') << std::setprecision(2) << new_surface_temperature
-		// 	  << "\tTb: " << std::setw(7) << std::setfill(' ') << std::setprecision(2) << temperature_at_bottom
-		// 	  << "\tM1: " << parameters.material_1_thermal_conductivity
-		// 	  << std::endl;
-
 		assemble_system_temperature();
 		solve_temperature();
 
@@ -874,9 +796,7 @@ void Heat_Pipe<dim>::run()
 			<< std::endl;
 }
 }
-//**************************************************************************************
-//--------------------------------------------------------------------------------------
-//**************************************************************************************
+
 int main (int argc, char *argv[])
 {
 	try
