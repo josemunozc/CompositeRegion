@@ -1,4 +1,3 @@
-
 namespace Parameters
 {  
 template <int dim>
@@ -59,7 +58,6 @@ struct AllParameters
 	double freezing_point;
 	double alpha;
 	double latent_heat;
-	double initial_temperature;
 	double reference_temperature;
 
 	double density_ice;
@@ -77,7 +75,7 @@ struct AllParameters
 
 	std::string top_fixed_value_file;
 	std::string initial_condition_file;
-	std::string depths_file;
+  	std::string depths_file;
 	std::string point_source_file;
 	std::string output_directory;
 
@@ -179,7 +177,7 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 				"0.",Patterns::Double(0),
 				"laboratory temperature");
 		prm.declare_entry("reference temperature",
-				"0.",Patterns::Double(0),
+				"0.",Patterns::Double(),
 				"reference temperature");
 		prm.declare_entry("freezing point",
 				"0.",Patterns::Double(0),
@@ -371,7 +369,6 @@ void AllParameters<dim>::parse_parameters (ParameterHandler &prm)
 		specific_heat_capacity_liquids    = prm.get_double ("liquids specific heat capacity");
 		specific_heat_capacity_ice        = prm.get_double ("ice specific heat capacity");
 		density_ice                       = prm.get_double ("ice density");
-		initial_temperature               = prm.get_double ("initial temperature");
 		reference_temperature             = prm.get_double ("reference temperature");
 		freezing_point                    = prm.get_double ("freezing point");
 		alpha                             = prm.get_double ("alpha");
@@ -407,21 +404,21 @@ void AllParameters<dim>::parse_parameters (ParameterHandler &prm)
 
 	prm.enter_subsection("boundary conditions");
 	{
-		fixed_at_bottom        = prm.get_bool   ("fixed at bottom");
-		bottom_fixed_value     = prm.get_double ("bottom fixed value");
-		fixed_at_top           = prm.get_bool   ("fixed at top");
-		point_source           = prm.get_bool   ("point source");
-		top_fixed_value_file   = prm.get        ("top fixed value file");
-		initial_condition_file = prm.get        ("initial condition file");
-		depths_file            = prm.get        ("depths file");
-		point_source_file      = prm.get        ("point source file");
+		fixed_at_bottom           = prm.get_bool   ("fixed at bottom");
+		bottom_fixed_value        = prm.get_double ("bottom fixed value");
+		fixed_at_top              = prm.get_bool   ("fixed at top");
+		point_source              = prm.get_bool   ("point source");
+		top_fixed_value_file      = prm.get        ("top fixed value file"); 
+		initial_condition_file    = prm.get        ("initial condition file");
+		depths_file               = prm.get        ("depths file");
+		point_source_file         = prm.get        ("point source file");
 	}
 	prm.leave_subsection();
 
 	prm.enter_subsection("other options");
 	{
 		output_frequency	= prm.get_integer("output frequency");
-		output_directory	= prm.get		 ("output directory");
+		output_directory	= prm.get	 ("output directory");
 	}
 	prm.leave_subsection();
 }

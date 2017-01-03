@@ -84,6 +84,7 @@ namespace TRL
     std::vector< std::vector<double> > depths_coordinates;
     std::vector< std::vector<double> > temperatures_at_points;
     std::vector< std::vector<double> > point_source_magnitudes;
+    double old_room_temperature, new_room_temperature;
     double old_surface_temperature, new_surface_temperature;
     double old_point_source_magnitude, new_point_source_magnitude;
 
@@ -154,11 +155,12 @@ namespace TRL
 	std::cout << "Error opening \"output_data.txt\" file\n";
 	throw 1;
       }
-
-    old_surface_temperature=0.;
-    new_surface_temperature=0.;
-    old_point_source_magnitude=0.;
-    new_point_source_magnitude=0.;
+    old_room_temperature       = 0.;
+    new_room_temperature       = 0.;
+    old_surface_temperature    = 0.;
+    new_surface_temperature    = 0.;
+    old_point_source_magnitude = 0.;
+    new_point_source_magnitude = 0.;
     time=0.;
     timestep_number=0;
   }
@@ -252,9 +254,10 @@ namespace TRL
 	 * a way of homogenize the code.
 	 * */
 
-	double thermal_conductivity           = -1.E10;
-	double total_volumetric_heat_capacity = -1.E10;
-	double source                         = 0.0;
+	double thermal_conductivity                 = -1.E10;
+	double total_volumetric_heat_capacity       = -1.E10;
+	double old_heat_loss                           = 0.;
+	double new_heat_loss                           = 0.;
 	{
 	  double specific_heat_capacity_liquids = parameters.specific_heat_capacity_liquids;
 	  double specific_heat_capacity_ice     = parameters.specific_heat_capacity_ice;
@@ -262,19 +265,20 @@ namespace TRL
 	  double density_liquids                = parameters.density_liquids;
 	  double density_ice                    = parameters.density_ice;
 	  double density_gas                    = parameters.density_air;
-
-	  double freezing_point       =parameters.freezing_point;
-	  double reference_temperature=parameters.reference_temperature;
-	  double coefficient_alpha    =parameters.alpha;
-	  double latent_heat_of_fusion=parameters.latent_heat;
-
+	  
+	  double freezing_point                 = parameters.freezing_point;
+	  double reference_temperature          = parameters.reference_temperature;
+	  double coefficient_alpha              = parameters.alpha;
+	  double latent_heat_of_fusion          = parameters.latent_heat;
+	  
 	  double cell_center=
 	    cell->center()[0];
 	  double cell_temperature=
 	    0.5*VectorTools::point_value(dof_handler,solution    ,Point<dim>(cell->center()[0]))+
 	    0.5*VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell->center()[0]));
-//	  double h=11.6516607672; // W/m3K
-//	  source=0.;//-1.*h*(cell_temperature-/*parameters.initial_temperature*/22); //W/m3
+	  double convective_coefficient = 11.6516607672; // W/m3K
+	  old_heat_loss = -1.*convective_coefficient*(cell_temperature-old_room_temperature); //W/m3
+	  new_heat_loss = -1.*convective_coefficient*(cell_temperature-new_room_temperature); //W/m3
 			
 	  double degree_of_saturation_ice           =0.;
 	  double derivative_degree_of_saturation_ice=0.;
@@ -285,7 +289,7 @@ namespace TRL
 		  derivative_degree_of_saturation_ice=
 				  coefficient_alpha*pow(1.-(cell_temperature-freezing_point),coefficient_alpha-1.);
 	    }
-			
+	  
 	  double specific_heat_capacity_solids=-1.E10;
 	  double density_solids               =-1.E-10;
 	  double porosity                     =-1.E10;
@@ -410,11 +414,11 @@ namespace TRL
 						   fe_values.JxW(q_point));
 		  }
 		cell_rhs(i)+=
-		  source*theta_temperature*time_step*
+		  new_heat_loss*theta_temperature*time_step*
 		  fe_values.shape_value(i,q_point) *
 		  fe_values.JxW(q_point)
 		  +
-		  source*(1-theta_temperature)*time_step*
+		  old_heat_loss*(1-theta_temperature)*time_step*
 		  fe_values.shape_value(i,q_point) *
 		  fe_values.JxW(q_point);
 	      }
@@ -442,22 +446,22 @@ namespace TRL
 			}
 	}
 	cell->get_dof_indices (local_dof_indices);
-
+	
 	for (unsigned int i=0; i<dofs_per_cell; ++i)
-	{
-		for (unsigned int j=0; j<dofs_per_cell; ++j)
-		{
-			laplace_matrix_new.add (local_dof_indices[i],local_dof_indices[j],cell_laplace_matrix_new(i,j));
+	  {
+	  for (unsigned int j=0; j<dofs_per_cell; ++j)
+		  {
+		  laplace_matrix_new.add (local_dof_indices[i],local_dof_indices[j],cell_laplace_matrix_new(i,j));
 			laplace_matrix_old.add (local_dof_indices[i],local_dof_indices[j],cell_laplace_matrix_old(i,j));
 			mass_matrix.add        (local_dof_indices[i],local_dof_indices[j],cell_mass_matrix(i,j)       );
 		}
 		system_rhs(local_dof_indices[i]) += cell_rhs(i);
 	}
       }
-
+    
     
     Vector<double> tmp      (solution.size ());
-
+    
     /*
       This is the section where the point source is included.
       Notice that there are other ways to do this, but the
@@ -482,13 +486,13 @@ namespace TRL
     system_rhs.add           ( 1.0,tmp);
     laplace_matrix_old.vmult ( tmp,old_solution);
     system_rhs.add           (-(1 - theta_temperature) * time_step,tmp);
-
+    
     system_matrix.copy_from (mass_matrix);
     system_matrix.add       (theta_temperature * time_step, laplace_matrix_new);
-
+    
     hanging_node_constraints.condense (system_matrix);
     hanging_node_constraints.condense (system_rhs);
-
+    
     if (parameters.fixed_at_bottom)
       {
 	std::map<unsigned int,double> boundary_values;
@@ -536,6 +540,7 @@ namespace TRL
   template <int dim>
   void Heat_Pipe<dim>::output_results()
   {
+    
 	  DataOut<dim> data_out;
 
 	  data_out.attach_dof_handler(dof_handler);
@@ -559,16 +564,16 @@ namespace TRL
 	  // at selected coordinates
 	  if (dim==1)
 	  {
-		  /*
-	  Extract temperatures from the solution vector
-		   */
+	    /*
+	      Extract temperatures from the solution vector
+	    */
 		  std::vector<double> temp_vector;
 		  if (temperatures_at_points.size()==0)
 		  {
 			  for (unsigned int i=0; i<depths_coordinates.size(); i++)
-				  temp_vector
-				  .push_back(VectorTools::point_value(dof_handler,old_solution,
-						  Point<dim>(-1.*depths_coordinates[i][2])));
+			    temp_vector
+			      .push_back(VectorTools::point_value(dof_handler,solution,
+								  Point<dim>(-1.*depths_coordinates[i][2])));
 
 		  }
 		  else
@@ -584,7 +589,7 @@ namespace TRL
 		   */
 		  output_file << timestep_number;
 		  for (unsigned int i=0; i<temp_vector.size(); i++)
-			  output_file << "\t" << std::setprecision(5) << temp_vector[i];
+		    output_file << "\t" << std::setprecision(5) << temp_vector[i];
 		  //output_file << std::endl;
 
 
@@ -732,6 +737,8 @@ namespace TRL
 		      << std::endl;
 	  }
       }
+    old_room_temperature    = met_data[timestep_number-1][1];
+    new_room_temperature    = met_data[timestep_number  ][1];
     old_surface_temperature = met_data[timestep_number-1][0];
     new_surface_temperature = met_data[timestep_number  ][0];
 
@@ -765,6 +772,12 @@ namespace TRL
 			  dummy_matrix,
 			  initial_condition,
 			  false);
+    // we use the following lines to print out the vectors 
+    // for (unsigned int i=0; i<initial_condition.size(); ++i) 
+    //   for (unsigned int j=0; j<initial_condition[i].size(); ++j)
+    // 	std::cout << initial_condition[i][j] << "\n";
+    
+
     /*
       The format of the matrix need to be changed from:
 
@@ -804,7 +817,7 @@ namespace TRL
 	      << initial_condition.size()    << std::endl
 	      << "Initial condition: \n\tDepth\tTemperature (C)\n";
     for (unsigned int i=0; i<initial_condition.size(); i++)
-      std::cout << "\t" << initial_condition[i][0] << "\t" << initial_condition[i][1] << std::endl;
+      std::cout << "\t" << initial_condition[i][0] << "\t" << initial_condition[i][1] <<std::endl; 
 
     VectorTools::project (dof_handler,
 			  hanging_node_constraints,
@@ -820,6 +833,8 @@ namespace TRL
     solution=old_solution;
   }
 
+
+  
   template <int dim>
   void Heat_Pipe<dim>::run()
   {
@@ -869,8 +884,9 @@ namespace TRL
 			  time<=time_max;
 			  time+=time_step, ++timestep_number)
 	  {
-		  update_met_data();
-
+	    if (parameters.fixed_at_top) // To correct the error in calculation when we change the B.C. between 1st type and 2nd type problem
+	      update_met_data();
+	    
 		  int iteration=0;
 		  double total_error =1E10;
 		  double solution_l1_norm_previous_iteration;
@@ -882,23 +898,20 @@ namespace TRL
 			  solution_l1_norm_previous_iteration=solution.l2_norm();
 			  solve_temperature();
 			  solution_l1_norm_current_iteration=solution.l2_norm();
-
+			  
 			  total_error=
-					  1.-std::fabs(solution_l1_norm_previous_iteration/solution_l1_norm_current_iteration);
+			    1.-std::fabs(solution_l1_norm_previous_iteration/solution_l1_norm_current_iteration);
 			  iteration++;
-
-			  std::cout << "\ttime step: " << timestep_number << "\titeration: " << iteration << "\ttotal_error: " << total_error
-					  << "\tdifference: " << total_error-1.E-10
-					  << "\tsolution_l1_norm_previous_iteration: " << solution_l1_norm_previous_iteration
-					  << "\tsolution_l1_norm_current_iteration: " << solution_l1_norm_current_iteration << "\n";
-		  }while (std::fabs(total_error)>5E-5);
-
+			  
+			  std::cout << "\ttime step: " << timestep_number << "\tTo" << old_surface_temperature << "\tTn" << new_surface_temperature << "\n";
+		  }while (std::fabs(total_error)>5E-3);
+		  
 		  std::cout << "Time step " << timestep_number << "\titeration: " << iteration << "\ttotal_error: " << total_error  << "\n";
 		  if (parameters.output_frequency!=0 && timestep_number%parameters.output_frequency==0)
-		  {
-			  output_results();
-		  }
-
+		    {
+		      output_results();
+		    }
+		  
 		  old_solution=solution;
 	  }
 	  output_file.close();
