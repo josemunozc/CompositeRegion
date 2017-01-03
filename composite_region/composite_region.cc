@@ -79,7 +79,7 @@ namespace TRL
     Threads::Mutex assembler_lock;
     Parameters::AllParameters<dim>  parameters;
 
-    std::vector< std::vector<int> >    date_and_time;
+    //std::vector< std::vector<int> >    date_and_time;
     std::vector< std::vector<double> > met_data;
     std::vector< std::vector<double> > depths_coordinates;
     std::vector< std::vector<double> > temperatures_at_points;
@@ -132,9 +132,7 @@ namespace TRL
 
     DataTools data_tools;
     data_tools.read_data (filenames,
-			  dummy_matrix,
-			  depths_coordinates,
-			  false);
+			  depths_coordinates);
 
     std::cout << "Available depth coordinate entries: "
 	      << depths_coordinates.size() << std::endl
@@ -715,9 +713,7 @@ namespace TRL
 	std::vector<std::string> filenames;
 	filenames.push_back(parameters.top_fixed_value_file);
 	data_tools.read_data (filenames,
-			      date_and_time,
-			      met_data,
-			      false);
+			      met_data);
 
 	std::cout << "\tAvailable surface data lines: " << met_data.size()
 		  << std::endl << std::endl;
@@ -728,9 +724,7 @@ namespace TRL
 	    filenames.clear();
 	    filenames.push_back(parameters.point_source_file);
 	    data_tools.read_data (filenames,
-				  dummy,
-				  point_source_magnitudes,
-				  false);
+				  point_source_magnitudes);
 
 	    std::cout << "\tAvailable point source entries: "
 		      << point_source_magnitudes.size()
@@ -768,10 +762,8 @@ namespace TRL
     std::vector< std::vector<int> > dummy_matrix;
     std::vector< std::vector<double> > initial_condition;
     DataTools data_tools;
-    data_tools.read_data (filenames,
-			  dummy_matrix,
-			  initial_condition,
-			  false);
+    data_tools.read_data(filenames,
+			 initial_condition);
     // we use the following lines to print out the vectors 
     // for (unsigned int i=0; i<initial_condition.size(); ++i) 
     //   for (unsigned int j=0; j<initial_condition[i].size(); ++j)
