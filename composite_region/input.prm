@@ -1,45 +1,22 @@
-# Listing of Parameters
-
-# --------------------------------------------------
 # Time stepping control
 subsection time stepping
-	set timestep number max	=	5 #336	# maximum number of timesteps to execute (Multiply) 30*24*300
-	set time step		=	1800	# simulation time step (Devide) 3600/300 (300=5min*60sec)
-  set theta scheme value  =   0.5
+	set timestep number max	= 10000 # maximum number of timesteps to execute (Multiply) 30*24*300
+	set time step		    = 10 # simulation time step (Devide) 3600/300 (300=5min*60sec)
+ 	set theta scheme value  =   1.0
 end
-
-# --------------------------------------------------
-# Geometric data
-# We are assuming a 1D domain with an insulation layer 
-# placed at some depth.
-#
-# domain depth        : x0 (0m)_____________________________________________________________________________________ xL (0.61)
-# insulation depth    :        <- 0.103m ->|    |
-# insulation thickness:                  ->|0.052m|<- 
-# point source depth:                         ->|0.156m|<-
-#
-# currently only homogeneous refinement is implemented 
-# number of cells is calculated as 2^n where n='refinement level'
 
 subsection geometric data
-  set domain size           =  0.610    # (m)
-  set material 0 thickness  =  0.105 	# (m)
-  set material 0 depth      =  0.000	# (m)
-  set material 1 thickness  =  0.004 	# (m)
-  set material 1 depth      =  0.105 	# (m)
-  set material 2 thickness  =  0.043 	# (m)
-  set material 2 depth      =  0.109 	# (m)
-  set material 3 thickness  =  0.003 	# (m)
-  set material 3 depth      =  0.152 	# (m)
-  set material 4 thickness  =  0.455 	# (m)
-  set material 4 depth      =  0.155 	# (m)
-  set point source depth    =  0.156    # (m)
-  set refinement level      =  10
+	set domain size           =  1.0    # (m)
+	set number of layers      =  3      # Positive integer (1-5)
+	set material 0 thickness  =  0.4 	# (m)
+	set material 1 thickness  =  0.2 	# (m)
+	set material 2 thickness  =  0.4 	# (m)
+	set material 0 depth      =  0.0	# (m) depth of layer's top surface
+	set material 1 depth      =  0.4	# (m)
+	set material 2 depth      =  0.6	# (m)
+	set refinement level      =  10
 end
 
-# --------------------------------------------------
-# Material data
-# currently only five materials implemented
 subsection material data
     set air density			  			  =       1.25	# (kg/m3)
     set air specific heat capacity		  =       1.256	# (J/kgK)
@@ -47,59 +24,58 @@ subsection material data
     set liquids specific heat capacity	  =    4186.	# (J/kgK)
     set ice density						  =     920.    # (kg/m3)
     set ice specific heat capacity	 	  =    1844.    # (J/kgK)
-    set reference temperature			  =       3.	# (C) 
-    set freezing point					  =       0.	# (C)
+    set reference temperature			  =       0.	# (C) 
+    set freezing point					  =      -0.1	# (C)
     set alpha							  =      -5.    # (dimensionless)
     set latent heat						  =  334000.	# (J/Kg)
     #layer 0
-    set material 0 degree of saturation	  =       0.5	# (dimensionless)
-    set material 0 porosity				  =       0.369	# (dimensionless)
-    set material 0 thermal conductivity	  =       1.115	# (W/mK) 1st layer of soil (DONAZZI)   
-    set material 0 density				  =    2660.	# (kg/m3)
-    set material 0 specific heat capacity =    2010.	# (J/kgK)
+    set material 0 degree of saturation	  =       1.0	# (dimensionless)
+    set material 0 porosity				  =       0.35	# (dimensionless)
+    set material 0 thermal conductivity	  =       1.5	# (W/mK) 1st layer of soil (DONAZZI)   
+    set material 0 density				  =    2500.	# (kg/m3)
+    set material 0 specific heat capacity =    2000.	# (J/kgK)
     #layer 1
-    set material 1 degree of saturation	  =       0.	# (dimensionless)
-    set material 1 porosity				  =       0.	# (dimensionless)
-    set material 1 thermal conductivity	  =       0.22	# (W/mK) 1st layer of insulation
-    set material 1 density				  =    1220.	# (kg/m3)
-    set material 1 specific heat capacity =    1200.	# (J/kgK)
+    set material 1 degree of saturation	  =       0.0	# (dimensionless)
+    set material 1 porosity				  =       0.35	# (dimensionless)
+    set material 1 thermal conductivity	  =       0.2	# (W/mK) 1st layer of soil (DONAZZI)   
+    set material 1 density				  =    2500.	# (kg/m3)
+    set material 1 specific heat capacity =       1.	# (J/kgK)
     #layer 2
-    set material 2 degree of saturation	  =       0.	# (dimensionless) Its value is equal to 0 if DRY or 1 if SATURATED
-    set material 2 porosity				  =       0.342 # (dimensionless)
-	set material 2 thermal conductivity	=	0.122	# (W/mK) 2nd layer of insulation DRY CONDITION
-#   set material 2 thermal conductivity	  =       0.857	# (W/mK) 2nd layer of insulation SATURATED CONDITION
-    set material 2 density				  =    2500.    # (kg/m3)
-    set material 2 specific heat capacity =       1.175	# (J/kgK)
-    #layer 3
-    set material 3 degree of saturation	  =       0.	# (dimensionless)
-    set material 3 porosity				  =       0.	# (dimensionless)
-    set material 3 thermal conductivity	  =       0.16	# (W/mK) 3rd layer of insulation
-    set material 3 density				  =    1440.	# (kg/m3)
-    set material 3 specific heat capacity =     900.	# (J/kgK)
-    #layer 4
-    set material 4 degree of saturation	  =       1.  	# (dimensionless)
-    set material 4 porosity				  =       0.343	# (dimensionless)
-    set material 4 thermal conductivity	  =       2.071	# (W/mK) 2nd layer of soil (DONAZZI)   
-    set material 4 density				  =    2660.	# (kg/m3)
-    set material 4 specific heat capacity =    2010.	# (J/kgK)
+    set material 2 degree of saturation	  =       1.0	# (dimensionless)
+    set material 2 porosity				  =       0.35	# (dimensionless)
+    set material 2 thermal conductivity	  =       1.5	# (W/mK) 1st layer of soil (DONAZZI)   
+    set material 2 density				  =    2500.	# (kg/m3)
+    set material 2 specific heat capacity =    2000.	# (J/kgK)
 end
 
 # --------------------------------------------------
 # Boundary conditions
 subsection boundary conditions
-  set fixed at bottom        = false      #
-	set bottom fixed value		=	21.764	# 
-	set fixed at top		=	true	# currently only 'true' implemented
-  set point source           = false  	  # define if there is a point source in the domain
-  set top fixed value file   = surface_temperature_variable.txt
-  set initial condition file = initial_condition.txt
   set depths file            = depths.txt
+  set heat loss factor       = 0. #11.6516607672 # positive number, set to 0 to neglect heat losses
+  
+  #point source
+  set point source           = false  	# define if there is a point source in the domain  
   set point source file      = point_source.txt
+  set point source depth    =  0.7  # (m)
+  
+  #top boundary
+  set fixed at top			 = false    # set to true to 1st kind b.c.
+  set top fixed value file   = surface_temperature_variable.txt
+    
+  set boundary condition top = second #
+  
+  #bottom boundary
+  set fixed at bottom        = false    #
+  set bottom fixed value	 = 21.764	# 
+
+  #initial condition
+  set initial condition file = initial_condition.txt  
 end
 
 # --------------------------------------------------
 # Other
 subsection other options
-	set output frequency	= 1	# positive integer, set to 0 to prevent output file generation
+	set output frequency	= 60	# every X seconds, positive integer, set to 0 to prevent output file generation
 	set output directory	= output
 end

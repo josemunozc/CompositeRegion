@@ -10,6 +10,7 @@ struct AllParameters
 	double theta;
 	double domain_size;
 	double point_source_depth;
+	unsigned int number_of_layers;
 	unsigned int refinement_level;
 	unsigned int output_frequency;
 
@@ -59,6 +60,7 @@ struct AllParameters
 	double alpha;
 	double latent_heat;
 	double reference_temperature;
+	double heat_loss_factor;
 
 	double density_ice;
 	double density_air;
@@ -72,6 +74,8 @@ struct AllParameters
 	double bottom_fixed_value;
 	bool fixed_at_top;
 	bool point_source;
+
+	std::string boundary_condition_top;
 
 	std::string top_fixed_value_file;
 	std::string initial_condition_file;
@@ -113,6 +117,10 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("domain size", "20",
 				Patterns::Double(0),
 				"size of domain in m");
+		prm.declare_entry("number of layers", "1",
+				Patterns::Integer(1,5),
+				"number of layers composing the"
+				" domain");
 		prm.declare_entry("material 0 thickness", "0.20",
 				Patterns::Double(0),
 				"thickness of material 0 in m");
@@ -143,9 +151,6 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 4 depth", "1.00",
 				Patterns::Double(0),
 				"depth of material 4 in m");
-		prm.declare_entry("point source depth", "7.00",
-				Patterns::Double(0),
-				"depth of point souce in m");
 		prm.declare_entry("refinement level", "5",
 				Patterns::Integer(),
 				"number of cells as in 2^n");
@@ -180,7 +185,7 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 				"0.",Patterns::Double(),
 				"reference temperature");
 		prm.declare_entry("freezing point",
-				"0.",Patterns::Double(0),
+				"0.",Patterns::Double(-20.),
 				"freezing point of pore water");
 		prm.declare_entry("alpha",
 				"0.",Patterns::Double(-10.,0),
@@ -312,6 +317,18 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 				Patterns::Anything(),
 				"file containing values for the magnitude "
 				"of a point source in the domain.");
+		prm.declare_entry("point source depth", "7.00",
+				Patterns::Double(0),
+				"depth of point souce in m");
+		prm.declare_entry("heat loss factor","0.0",
+				Patterns::Double(0.),
+				"Heat loss factor in W/m3K. This is estimated integrating a"
+				" surface heat transfer coefficient (W/m2K) over the boundary"
+				" and dividing it by the volume of the domain");
+		prm.declare_entry("boundary condition top","first",
+				Patterns::Anything(),
+				"set to first, second or third to set the "
+				"corresponding boundary condition at the top");
 	}
 	prm.leave_subsection();
 
@@ -345,7 +362,7 @@ void AllParameters<dim>::parse_parameters (ParameterHandler &prm)
 	prm.enter_subsection("geometric data");
 	{
 		domain_size           = prm.get_double ("domain size");
-		point_source_depth    = prm.get_double ("point source depth");
+		number_of_layers      = prm.get_integer("number of layers");
 		refinement_level      = prm.get_integer("refinement level");
 		material_0_depth      = prm.get_double ("material 0 depth");
 		material_0_thickness  = prm.get_double ("material 0 thickness");
@@ -408,10 +425,13 @@ void AllParameters<dim>::parse_parameters (ParameterHandler &prm)
 		bottom_fixed_value        = prm.get_double ("bottom fixed value");
 		fixed_at_top              = prm.get_bool   ("fixed at top");
 		point_source              = prm.get_bool   ("point source");
+		point_source_depth        = prm.get_double ("point source depth");
 		top_fixed_value_file      = prm.get        ("top fixed value file"); 
 		initial_condition_file    = prm.get        ("initial condition file");
 		depths_file               = prm.get        ("depths file");
 		point_source_file         = prm.get        ("point source file");
+		heat_loss_factor          = prm.get_double ("heat loss factor");
+		boundary_condition_top    = prm.get        ("boundary condition top");
 	}
 	prm.leave_subsection();
 
