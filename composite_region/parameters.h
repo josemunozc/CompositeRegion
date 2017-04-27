@@ -1,5 +1,7 @@
 namespace Parameters
 {  
+using namespace dealii;
+
 template <int dim>
 struct AllParameters
 {
@@ -14,11 +16,11 @@ struct AllParameters
 	unsigned int refinement_level;
 	unsigned int output_frequency;
 
-	double material_0_thermal_conductivity;
-	double material_1_thermal_conductivity;
-	double material_2_thermal_conductivity;
-	double material_3_thermal_conductivity;
-	double material_4_thermal_conductivity;
+	double material_0_thermal_conductivity_solids;
+	double material_1_thermal_conductivity_solids;
+	double material_2_thermal_conductivity_solids;
+	double material_3_thermal_conductivity_solids;
+	double material_4_thermal_conductivity_solids;
 
 	double material_0_density;
 	double material_1_density;
@@ -56,6 +58,12 @@ struct AllParameters
 	double material_3_porosity;
 	double material_4_porosity;
 
+	std::string material_0_thermal_conductivity_relationship;
+	std::string material_1_thermal_conductivity_relationship;
+	std::string material_2_thermal_conductivity_relationship;
+	std::string material_3_thermal_conductivity_relationship;
+	std::string material_4_thermal_conductivity_relationship;
+
 	double freezing_point;
 	double alpha;
 	double latent_heat;
@@ -69,6 +77,9 @@ struct AllParameters
 	double specific_heat_capacity_ice;
 	double specific_heat_capacity_air;
 	double specific_heat_capacity_liquids;
+
+	double thermal_conductivity_liquids;
+	double thermal_conductivity_air;
 
 	bool fixed_at_bottom;
 	double bottom_fixed_value;
@@ -89,7 +100,81 @@ struct AllParameters
 
 template <int dim>
 AllParameters<dim>::AllParameters ()
-{}
+{
+	timestep_number_max=0;
+	time_step=0.;
+	theta=0.;
+	domain_size=0.;
+	point_source_depth=0.;
+	number_of_layers=0;
+	refinement_level=0;
+	output_frequency=0;
+
+	material_0_thermal_conductivity_solids=0.;
+	material_1_thermal_conductivity_solids=0.;
+	material_2_thermal_conductivity_solids=0.;
+	material_3_thermal_conductivity_solids=0.;
+	material_4_thermal_conductivity_solids=0.;
+
+	material_0_density=0.;
+	material_1_density=0.;
+	material_2_density=0.;
+	material_3_density=0.;
+	material_4_density=0.;
+
+	material_0_specific_heat_capacity=0.;
+	material_1_specific_heat_capacity=0.;
+	material_2_specific_heat_capacity=0.;
+	material_3_specific_heat_capacity=0.;
+	material_4_specific_heat_capacity=0.;
+
+	material_0_thickness=0.;
+	material_1_thickness=0.;
+	material_2_thickness=0.;
+	material_3_thickness=0.;
+	material_4_thickness=0.;
+
+	material_0_depth=0.;
+	material_1_depth=0.;
+	material_2_depth=0.;
+	material_3_depth=0.;
+	material_4_depth=0.;
+
+	material_0_degree_of_saturation=0.;
+	material_1_degree_of_saturation=0.;
+	material_2_degree_of_saturation=0.;
+	material_3_degree_of_saturation=0.;
+	material_4_degree_of_saturation=0.;
+
+	material_0_porosity=0.;
+	material_1_porosity=0.;
+	material_2_porosity=0.;
+	material_3_porosity=0.;
+	material_4_porosity=0.;
+
+	freezing_point=0.;
+	alpha=0.;
+	latent_heat=0.;
+	reference_temperature=0.;
+	heat_loss_factor=0.;
+
+	density_ice=0.;
+	density_air=0.;
+	density_liquids=0.;
+
+	specific_heat_capacity_ice=0.;
+	specific_heat_capacity_air=0.;
+	specific_heat_capacity_liquids=0.;
+
+	thermal_conductivity_liquids=0.;
+	thermal_conductivity_air=0.;
+
+	fixed_at_bottom=false;
+	bottom_fixed_value=0.;
+	fixed_at_top=false;
+	point_source=false;
+
+}
 
 template <int dim>
 void
@@ -168,16 +253,16 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 				"density of liquids in kg/m3");
 		prm.declare_entry("air specific heat capacity",
 				"0.",Patterns::Double(0),
-				"specific capacity of air in J/mK");
+				"specific capacity of air in J/kgK");
 		prm.declare_entry("liquids specific heat capacity",
 				"0.",Patterns::Double(0),
-				"specific capacity of liquids in J/mK");
+				"specific capacity of liquids in J/kgK");
 		prm.declare_entry("ice density",
 				"0.",Patterns::Double(0),
 				"density of ice in kg/m3");
 		prm.declare_entry("ice specific heat capacity",
 				"0.",Patterns::Double(0),
-				"specific capacity of ice in J/mK");
+				"specific capacity of ice in J/kgK");
 		prm.declare_entry("initial temperature",
 				"0.",Patterns::Double(0),
 				"laboratory temperature");
@@ -193,6 +278,12 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("latent heat",
 				"0.",Patterns::Double(0),
 				"latent heat of fusion");
+		prm.declare_entry("liquids thermal conductivity",
+				"0.",Patterns::Double(0),
+				"thermal conductivity of liquids in W/mK");
+		prm.declare_entry("air thermal conductivity",
+				"0.",Patterns::Double(0),
+				"thermal conductivity of air in W/mK");
 		/*
 		 * layer 0
 		 * */
@@ -202,7 +293,7 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 0 porosity",
 				"0.",Patterns::Double(0.,1.),
 				"porosity of soil layer 0");
-		prm.declare_entry("material 0 thermal conductivity",
+		prm.declare_entry("material 0 thermal conductivity solids",
 				"0.",Patterns::Double(0.),
 				"thermal conductivity of material 0 in W/mK");
 		prm.declare_entry("material 0 density",
@@ -211,6 +302,14 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 0 specific heat capacity",
 				"0.",Patterns::Double(0.),
 				"specific capacity of soil layer 0 in J/kgK");
+		prm.declare_entry("material 0 thermal conductivity relationship",
+				"",Patterns::Anything(),
+				"string defining the theoretical relationship "
+				"to estimate the thermal conductivity of the layer. "
+				"Three expressions are currently defined based on "
+				"the work of 'hugh' (2012); 'donazzi' (1979); and "
+				"a 'bulk' relation that uses the value provided to"
+				"thermal_conductivity_solids as it is.");
 		/*
 		 * layer 1
 		 * */
@@ -220,7 +319,7 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 1 porosity",
 				"0.",Patterns::Double(0.,1.),
 				"porosity of soil layer 1");
-		prm.declare_entry("material 1 thermal conductivity",
+		prm.declare_entry("material 1 thermal conductivity solids",
 				"0.",Patterns::Double(0.),
 				"thermal conductivity of soil layer 1 in W/mK");
 		prm.declare_entry("material 1 density",
@@ -229,6 +328,14 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 1 specific heat capacity",
 				"0.",Patterns::Double(0.),
 				"specific capacity of soil layer 1 in J/kgK");
+		prm.declare_entry("material 1 thermal conductivity relationship",
+				"",Patterns::Anything(),
+				"string defining the theoretical relationship "
+				"to estimate the thermal conductivity of the layer. "
+				"Three expressions are currently defined based on "
+				"the work of 'hugh' (2012); 'donazzi' (1979); and "
+				"a 'bulk' relation that uses the value provided to"
+				"thermal_conductivity_solids as it is.");
 		/*
 		 * layer 2
 		 * */
@@ -238,7 +345,7 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 2 porosity",
 				"0.",Patterns::Double(0.,1.),
 				"porosity of soil layer 2");
-		prm.declare_entry("material 2 thermal conductivity",
+		prm.declare_entry("material 2 thermal conductivity solids",
 				"0.",Patterns::Double(0.),
 				"thermal conductivity of soil layer 2 in W/mK");
 		prm.declare_entry("material 2 density",
@@ -247,6 +354,14 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 2 specific heat capacity",
 				"0.",Patterns::Double(0.),
 				"specific capacity of soil layer 2 in J/kgK");
+		prm.declare_entry("material 2 thermal conductivity relationship",
+				"",Patterns::Anything(),
+				"string defining the theoretical relationship "
+				"to estimate the thermal conductivity of the layer. "
+				"Three expressions are currently defined based on "
+				"the work of 'hugh' (2012); 'donazzi' (1979); and "
+				"a 'bulk' relation that uses the value provided to"
+				"thermal_conductivity_solids as it is.");
 		/*
 		 * layer 3
 		 * */
@@ -256,7 +371,7 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 3 porosity",
 				"0.",Patterns::Double(0.,1.),
 				"porosity of soil layer 3");
-		prm.declare_entry("material 3 thermal conductivity",
+		prm.declare_entry("material 3 thermal conductivity solids",
 				"0.",Patterns::Double(0.),
 				"thermal conductivity of soil layer 3 in W/mK");
 		prm.declare_entry("material 3 density",
@@ -265,6 +380,14 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 3 specific heat capacity",
 				"0.",Patterns::Double(0.),
 				"specific capacity of soil layer 3 in J/kgK");
+		prm.declare_entry("material 3 thermal conductivity relationship",
+				"",Patterns::Anything(),
+				"string defining the theoretical relationship "
+				"to estimate the thermal conductivity of the layer. "
+				"Three expressions are currently defined based on "
+				"the work of 'hugh' (2012); 'donazzi' (1979); and "
+				"a 'bulk' relation that uses the value provided to"
+				"thermal_conductivity_solids as it is.");
 		/*
 		 * layer 4
 		 * */
@@ -274,7 +397,7 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 4 porosity",
 				"0.",Patterns::Double(0.,1.),
 				"porosity of soil layer 4");
-		prm.declare_entry("material 4 thermal conductivity",
+		prm.declare_entry("material 4 thermal conductivity solids",
 				"0.",Patterns::Double(0.),
 				"thermal conductivity of soil layer 4 in W/mK");
 		prm.declare_entry("material 4 density",
@@ -283,6 +406,14 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 		prm.declare_entry("material 4 specific heat capacity",
 				"0.",Patterns::Double(0.),
 				"specific capacity of soil layer 4 in J/kgK");
+		prm.declare_entry("material 4 thermal conductivity relationship",
+				"",Patterns::Anything(),
+				"string defining the theoretical relationship "
+				"to estimate the thermal conductivity of the layer. "
+				"Three expressions are currently defined based on "
+				"the work of 'hugh' (2012); 'donazzi' (1979); and "
+				"a 'bulk' relation that uses the value provided to"
+				"thermal_conductivity_solids as it is.");
 	}
 	prm.leave_subsection();
 
@@ -390,31 +521,48 @@ void AllParameters<dim>::parse_parameters (ParameterHandler &prm)
 		freezing_point                    = prm.get_double ("freezing point");
 		alpha                             = prm.get_double ("alpha");
 		latent_heat                       = prm.get_double ("latent heat");
+		thermal_conductivity_liquids      = prm.get_double ("liquids thermal conductivity");
+		thermal_conductivity_air          = prm.get_double ("air thermal conductivity");
 		material_0_degree_of_saturation   = prm.get_double ("material 0 degree of saturation");
 		material_0_porosity               = prm.get_double ("material 0 porosity");
-		material_0_thermal_conductivity   = prm.get_double ("material 0 thermal conductivity");
 		material_0_density                = prm.get_double ("material 0 density");
 		material_0_specific_heat_capacity = prm.get_double ("material 0 specific heat capacity");
+		material_0_thermal_conductivity_solids
+		=prm.get_double ("material 0 thermal conductivity solids");
+		material_0_thermal_conductivity_relationship
+		=prm.get("material 0 thermal conductivity relationship");
 		material_1_degree_of_saturation   = prm.get_double ("material 1 degree of saturation");
 		material_1_porosity               = prm.get_double ("material 1 porosity");
-		material_1_thermal_conductivity   = prm.get_double ("material 1 thermal conductivity");
 		material_1_density                = prm.get_double ("material 1 density");
 		material_1_specific_heat_capacity = prm.get_double ("material 1 specific heat capacity");
+		material_1_thermal_conductivity_solids
+		=prm.get_double ("material 1 thermal conductivity solids");
+		material_1_thermal_conductivity_relationship
+		=prm.get("material 1 thermal conductivity relationship");
 		material_2_degree_of_saturation   = prm.get_double ("material 2 degree of saturation");
 		material_2_porosity               = prm.get_double ("material 2 porosity");
-		material_2_thermal_conductivity   = prm.get_double ("material 2 thermal conductivity");
 		material_2_density                = prm.get_double ("material 2 density");
 		material_2_specific_heat_capacity = prm.get_double ("material 2 specific heat capacity");
+		material_2_thermal_conductivity_solids
+		= prm.get_double ("material 2 thermal conductivity solids");
+		material_2_thermal_conductivity_relationship
+		=prm.get("material 2 thermal conductivity relationship");
 		material_3_degree_of_saturation   = prm.get_double ("material 3 degree of saturation");
 		material_3_porosity               = prm.get_double ("material 3 porosity");
-		material_3_thermal_conductivity   = prm.get_double ("material 3 thermal conductivity");
 		material_3_density                = prm.get_double ("material 3 density");
 		material_3_specific_heat_capacity = prm.get_double ("material 3 specific heat capacity");
+		material_3_thermal_conductivity_solids
+		=prm.get_double ("material 3 thermal conductivity solids");
+		material_3_thermal_conductivity_relationship
+		=prm.get("material 3 thermal conductivity relationship");
 		material_4_degree_of_saturation   = prm.get_double ("material 4 degree of saturation");
 		material_4_porosity               = prm.get_double ("material 4 porosity");
-		material_4_thermal_conductivity   = prm.get_double ("material 4 thermal conductivity");
 		material_4_density                = prm.get_double ("material 4 density");
 		material_4_specific_heat_capacity = prm.get_double ("material 4 specific heat capacity");
+		material_4_thermal_conductivity_solids
+		=prm.get_double ("material 4 thermal conductivity solids");
+		material_4_thermal_conductivity_relationship
+		=prm.get("material 4 thermal conductivity relationship");
 	}
 	prm.leave_subsection();
 

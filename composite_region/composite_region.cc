@@ -61,6 +61,12 @@ namespace TRL
     		double &total_volumetric_heat_capacity/*(J/m3K)*/,
 			double &thermal_energy/*J*/,
 			double &ice_saturation);
+
+    double thermal_conductivity_relations(const std::string relationship,
+    		const double porosity,
+			const double degree_of_saturation,
+    		double thermal_conductivity_solids);
+
     double thermal_losses(const double temperature_gradient/*(m)*/);
     //double snow_surface_heat_flux(double surface_temperature); //(W/m2)
 
@@ -99,6 +105,8 @@ namespace TRL
     double old_surface_temperature, new_surface_temperature;
     double old_point_source_magnitude, new_point_source_magnitude;
     double column_thermal_energy;
+    double thermal_conductivity_liquids;
+    double thermal_conductivity_air;
 
     std::ofstream output_file;
   };
@@ -136,6 +144,10 @@ namespace TRL
     timestep_number_max = parameters.timestep_number_max;
     time_step           = parameters.time_step;
     time_max            = time_step*timestep_number_max;
+
+
+    thermal_conductivity_liquids   = parameters.thermal_conductivity_liquids;
+    thermal_conductivity_air       = parameters.thermal_conductivity_air;
 
     /*
       We want to read the file containing the coordinates
@@ -205,8 +217,67 @@ namespace TRL
   }
 
   template <int dim>
-  void Heat_Pipe<dim>::material_data(const double x,
-		  const double temperature,
+  double Heat_Pipe<dim>::thermal_conductivity_relations(const std::string relationship,
+		  const double porosity,
+		  const double degree_of_saturation,
+		  double thermal_conductivity_solids)
+{
+	  double thermal_conductivity=0.;
+	  if (relationship.compare("donazzi"))
+	  {
+		  /*
+		   * Estimation of thermal conductivity from Donazzi (1979)
+		   * Donazzi neglects the contribution of air. But the formulation
+		   * is applicable to unsaturated soils because it includes degree
+		   * of saturation.
+		   * */
+		  thermal_conductivity=1./(
+				  pow(1./thermal_conductivity_liquids,porosity)*
+				  pow(1./thermal_conductivity_solids,1.-porosity)*
+				  exp(3.08*(1.-degree_of_saturation)*porosity));
+	  }
+	  else if (relationship.compare("haigh"))
+	  {
+		  /*
+		   * Estimation of thermal conductivity from Haigh (2012)
+		   *
+		   * */
+		  double void_ratio=porosity/(1.-porosity);
+		  double E=(2.*void_ratio-1.)/3.;//xi
+		  double B=(1./3.)*acos((2.*(1.+3.*E)*(1.-degree_of_saturation)-pow(1.+E,3.))/pow(1.+E,3.));
+		  double X=0.5*(1.+E)*(1.+cos(B)-pow(3.,0.5)*sin(B));
+		  double a_w=thermal_conductivity_liquids/thermal_conductivity_solids;
+		  double a_a=thermal_conductivity_air/thermal_conductivity_solids;
+
+		  thermal_conductivity
+		  =thermal_conductivity_solids
+		  *(2.*pow(1.+E,2.)*
+				  ((a_w/pow(1.-a_w,2.))*log(((1+E)+(a_w-1.)*X)/(E+a_w))+
+						  (a_a/pow(1.-a_a,2.))*log((1.+E)/((1+E)+(a_a-1.)*X)))
+						  +(2.*(1.+E)/((1.-a_w)*(1.-a_a)))*((a_w-a_a)*X-(1.-a_a)*a_w));
+	  }
+	  else if (relationship.compare("bulk"))
+	  {
+		  /*
+		   * This only returns the same value that is given as input in the input
+		   * file. Is meant to let you test quickly values for this parameter or
+		   * for materials that are not porous (like plastics).
+		   * */
+		  thermal_conductivity
+		  =thermal_conductivity_solids;
+	  }
+	  else
+	  {
+		  std::cout << "Error. Wrong thermal conductivity relationship"
+				  " requested not currently implemented.\n";
+		  throw -1;
+	  }
+	  return thermal_conductivity;
+  }
+
+  template <int dim>
+  void Heat_Pipe<dim>::material_data(const double cell_center,
+		  const double cell_temperature,
 		  const double cell_diameter,
 		  double &thermal_conductivity,
 		  double &total_volumetric_heat_capacity,
@@ -228,6 +299,11 @@ namespace TRL
 	   * NOTE that at the moment there are two layers composed of a single element (plastic lids)
 	   * the thermal properties of these layers are calculated in a different way until we think of
 	   * a way of homogenize the code.
+	   *
+	   * The function receives thermal conductivity of solids in the layer of interest.
+	   * */
+	  /*
+	   * These variables are assumed to be constants. That's why we defined them inside the function.
 	   * */
 	  double specific_heat_capacity_liquids = parameters.specific_heat_capacity_liquids;
 	  double specific_heat_capacity_ice     = parameters.specific_heat_capacity_ice;
@@ -241,9 +317,6 @@ namespace TRL
 	  double coefficient_alpha              = parameters.alpha;
 	  double latent_heat_of_fusion          = parameters.latent_heat;
 
-	  double cell_center=x;
-	  double cell_temperature=temperature;
-
 	  double degree_of_saturation_ice           =0.;
 	  double derivative_degree_of_saturation_ice=0.;
 	  if (cell_temperature<=freezing_point)
@@ -255,57 +328,64 @@ namespace TRL
 	  }
 
 	  double specific_heat_capacity_solids=-1.E10;
-	  double density_solids               =-1.E-10;
+	  double thermal_conductivity_solids  =-1.E10;
+	  double density_solids               =-1.E10;
 	  double porosity                     =-1.E10;
-	  double degree_of_saturation         =-1.-10;
+	  double degree_of_saturation         =-1.E10;
+	  std::string relationship            = "";
 	  if (cell_center>-1.*(parameters.material_0_depth+parameters.material_0_thickness))/*layer 0*/
 	  {
-		  thermal_conductivity          = parameters.material_0_thermal_conductivity;
+		  thermal_conductivity_solids   = parameters.material_0_thermal_conductivity_solids;
 		  specific_heat_capacity_solids = parameters.material_0_specific_heat_capacity;
 		  density_solids                = parameters.material_0_density;
 		  porosity                      = parameters.material_0_porosity;
 		  degree_of_saturation          = parameters.material_0_degree_of_saturation;
+		  relationship                  = parameters.material_0_thermal_conductivity_relationship;
 	  }
 	  else if (cell_center<=-1.*parameters.material_1_depth &&
 			  cell_center>-1.*(parameters.material_1_depth+parameters.material_1_thickness))/*layer 1*/
 	  {
-		  thermal_conductivity          = parameters.material_1_thermal_conductivity;
+		  thermal_conductivity_solids   = parameters.material_1_thermal_conductivity_solids;
 		  specific_heat_capacity_solids = parameters.material_1_specific_heat_capacity;
 		  density_solids                = parameters.material_1_density;
 		  porosity                      = parameters.material_1_porosity;
 		  degree_of_saturation          = parameters.material_1_degree_of_saturation;
+		  relationship                  = parameters.material_1_thermal_conductivity_relationship;
 	  }
 	  else if (cell_center<=-1.* parameters.material_2_depth &&
 			  cell_center>-1.*(parameters.material_2_depth+parameters.material_2_thickness))/*layer 2*/
 	  {
-		  thermal_conductivity          = parameters.material_2_thermal_conductivity;
+		  thermal_conductivity_solids   = parameters.material_2_thermal_conductivity_solids;
 		  specific_heat_capacity_solids = parameters.material_2_specific_heat_capacity;
 		  density_solids                = parameters.material_2_density;
 		  porosity                      = parameters.material_2_porosity;
 		  degree_of_saturation          = parameters.material_2_degree_of_saturation;
+		  relationship                  = parameters.material_2_thermal_conductivity_relationship;
 
-		  if(timestep_number>336) // Change according to the time steps of the experiments
-		  {
-			  thermal_conductivity      = 0.122;
-			  degree_of_saturation      = 0.;
-		  }
+		  //  if(timestep_number>336) // Change according to the time steps of the experiments
+		  //  {
+		  //  thermal_conductivity      = 0.122;
+		  //  degree_of_saturation      = 0.;
+		  //  }
 	  }
 	  else if (cell_center<=-1.* parameters.material_3_depth &&
 			  cell_center>-1.*(parameters.material_3_depth+parameters.material_3_thickness))/*layer 3*/
 	  {
-		  thermal_conductivity          = parameters.material_3_thermal_conductivity;
+		  thermal_conductivity_solids   = parameters.material_3_thermal_conductivity_solids;
 		  specific_heat_capacity_solids = parameters.material_3_specific_heat_capacity;
 		  density_solids                = parameters.material_3_density;
 		  porosity                      = parameters.material_3_porosity;
 		  degree_of_saturation          = parameters.material_3_degree_of_saturation;
+		  relationship                  = parameters.material_3_thermal_conductivity_relationship;
 	  }
 	  else if (cell_center<=-1.*parameters.material_4_depth)/*layer 4*/
 	  {
-		  thermal_conductivity          = parameters.material_4_thermal_conductivity;
+		  thermal_conductivity_solids   = parameters.material_4_thermal_conductivity_solids;
 		  specific_heat_capacity_solids = parameters.material_4_specific_heat_capacity;
 		  density_solids                = parameters.material_4_density;
 		  porosity                      = parameters.material_4_porosity;
 		  degree_of_saturation          = parameters.material_4_degree_of_saturation;
+		  relationship                  = parameters.material_4_thermal_conductivity_relationship;
 	  }
 	  else
 	  {
@@ -313,6 +393,12 @@ namespace TRL
 		  throw -1;
 	  }
 
+	  thermal_conductivity
+	  =thermal_conductivity_relations(relationship,porosity,degree_of_saturation,thermal_conductivity_solids);
+
+	  /*
+	   * Estimation of specific heat capacity
+	   * */
 	  double Hc=
 			  (1.-degree_of_saturation_ice)*
 			  porosity*degree_of_saturation*specific_heat_capacity_liquids*density_liquids
@@ -333,8 +419,8 @@ namespace TRL
 			  (a-b);
 
 	  thermal_energy=cell_diameter*
-			  (Hc*((   theta_temperature)*VectorTools::point_value(dof_handler,    solution,Point<dim>(x))
-	              +(1.-theta_temperature)*VectorTools::point_value(dof_handler,old_solution,Point<dim>(x))
+			  (Hc*((   theta_temperature)*VectorTools::point_value(dof_handler,    solution,Point<dim>(cell_center))
+	              +(1.-theta_temperature)*VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell_center))
 	              -reference_temperature)
 					  -latent_heat_of_fusion*porosity*degree_of_saturation*degree_of_saturation_ice*density_ice);
 
@@ -787,15 +873,15 @@ namespace TRL
 			  std::cout << "\tAvailable surface data lines: " << met_data.size()
 									  << std::endl << std::endl;
 		  }
-		  //	  old_room_temperature    = met_data[timestep_number-1][1];
-		  //	  new_room_temperature    = met_data[timestep_number  ][1];
-		  //	  old_surface_temperature = met_data[timestep_number-1][0];
-		  //	  new_surface_temperature = met_data[timestep_number  ][0];
+		  old_room_temperature    = met_data[timestep_number-1][1];
+		  new_room_temperature    = met_data[timestep_number  ][1];
+		  old_surface_temperature = met_data[timestep_number-1][0];
+		  new_surface_temperature = met_data[timestep_number  ][0];
 
-		  old_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-		  new_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
-		  old_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-		  new_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
+//		  old_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
+//		  new_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
+//		  old_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
+//		  new_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
 	  }
 
 
@@ -915,31 +1001,31 @@ namespace TRL
 				  << "\t\tLayer 1: from "
 				  << parameters.material_0_depth << " to "
 				  << parameters.material_0_depth+parameters.material_0_thickness << "\t"
-				  << "k:" << parameters.material_0_thermal_conductivity << " W/mK\t"
+				  << "k:" << parameters.material_0_thermal_conductivity_solids << " W/mK\t"
 				  << "Cp:" << (parameters.material_0_specific_heat_capacity*
 					  parameters.material_0_density)/1000. << " MJ/m3K\n"
 				  << "\t\tLayer 2: from "
 				  << parameters.material_1_depth << " to "
 				  << parameters.material_1_depth+parameters.material_1_thickness << "\t"
-				  << "k:" << parameters.material_1_thermal_conductivity << " W/mK\t"
+				  << "k:" << parameters.material_1_thermal_conductivity_solids << " W/mK\t"
 				  << "Cp:" << (parameters.material_1_specific_heat_capacity*
 					  parameters.material_1_density)/1000. << " MJ/m3K\n"
 				  << "\t\tLayer 3: from "
 				  << parameters.material_2_depth << " to "
 				  << parameters.material_2_depth+parameters.material_2_thickness << "\t"
-				  << "k:" << parameters.material_2_thermal_conductivity << " W/mK\t"
+				  << "k:" << parameters.material_2_thermal_conductivity_solids << " W/mK\t"
 				  << "Cp:" << (parameters.material_2_specific_heat_capacity*
 					  parameters.material_2_density)/1000. << "MJ/m3K\n"
 				  << "\t\tLayer 4: from "
 				  << parameters.material_3_depth << " to "
 				  << parameters.material_3_depth+parameters.material_3_thickness << "\t"
-				  << "k:" << parameters.material_3_thermal_conductivity << " W/mK\t"
+				  << "k:" << parameters.material_3_thermal_conductivity_solids << " W/mK\t"
 				  << "Cp:" << (parameters.material_3_specific_heat_capacity*
 					  parameters.material_3_density)/1000. << "MJ/m3K\n"
 				  << "\t\tLayer 5: from "
 				  << parameters.material_4_depth << " to "
 				  << parameters.material_4_depth+parameters.material_4_thickness << "\t"
-				  << "k:" << parameters.material_4_thermal_conductivity << " W/mK\t"
+				  << "k:" << parameters.material_4_thermal_conductivity_solids << " W/mK\t"
 				  << "Cp:" << (parameters.material_4_specific_heat_capacity*
 					  parameters.material_4_density)/1000. << "MJ/m3K\n";
 	  }
