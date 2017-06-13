@@ -98,6 +98,8 @@ namespace TRL
 
     //std::vector< std::vector<int> >    date_and_time;
     std::vector< std::vector<double> > met_data;
+    std::vector<std::vector<double> > interpolated_temperature_surface;
+    std::vector<std::vector<double> > interpolated_temperature_room;
     std::vector< std::vector<double> > depths_coordinates;
     std::vector< std::vector<double> > temperatures_at_points;
     std::vector< std::vector<double> > point_source_magnitudes;
@@ -175,12 +177,12 @@ namespace TRL
 	std::cout << "\n";
       }
 
-    std::string output_filename="output_data.txt";
+    std::string output_filename=parameters.output_file;
     remove(output_filename.c_str());
     output_file.open(output_filename.c_str(),std::ios::app);
     if (!output_file.is_open()) //some error with the file
     {
-    	std::cout << "Error opening \"output_data.txt\" file\n";
+    	std::cout << "Error opening output data file\n";
     	throw 1;
     }
 
@@ -223,7 +225,7 @@ namespace TRL
 		  double thermal_conductivity_solids)
 {
 	  double thermal_conductivity=0.;
-	  if (relationship.compare("donazzi"))
+	  if (relationship.compare("donazzi")==0)
 	  {
 		  /*
 		   * Estimation of thermal conductivity from Donazzi (1979)
@@ -236,7 +238,7 @@ namespace TRL
 				  pow(1./thermal_conductivity_solids,1.-porosity)*
 				  exp(3.08*(1.-degree_of_saturation)*porosity));
 	  }
-	  else if (relationship.compare("haigh"))
+	  else if (relationship.compare("haigh")==0)
 	  {
 		  /*
 		   * Estimation of thermal conductivity from Haigh (2012)
@@ -250,13 +252,13 @@ namespace TRL
 		  double a_a=thermal_conductivity_air/thermal_conductivity_solids;
 
 		  thermal_conductivity
-		  =thermal_conductivity_solids
+		  =1.58*thermal_conductivity_solids
 		  *(2.*pow(1.+E,2.)*
 				  ((a_w/pow(1.-a_w,2.))*log(((1+E)+(a_w-1.)*X)/(E+a_w))+
 						  (a_a/pow(1.-a_a,2.))*log((1.+E)/((1+E)+(a_a-1.)*X)))
 						  +(2.*(1.+E)/((1.-a_w)*(1.-a_a)))*((a_w-a_a)*X-(1.-a_a)*a_w));
 	  }
-	  else if (relationship.compare("bulk"))
+	  else if (relationship.compare("bulk")==0)
 	  {
 		  /*
 		   * This only returns the same value that is given as input in the input
@@ -332,25 +334,31 @@ namespace TRL
 	  double density_solids               =-1.E10;
 	  double porosity                     =-1.E10;
 	  double degree_of_saturation         =-1.E10;
+	  double energy_factor                =1.;
 	  std::string relationship            = "";
 	  if (cell_center>-1.*(parameters.material_0_depth+parameters.material_0_thickness))/*layer 0*/
-	  {
-		  thermal_conductivity_solids   = parameters.material_0_thermal_conductivity_solids;
-		  specific_heat_capacity_solids = parameters.material_0_specific_heat_capacity;
-		  density_solids                = parameters.material_0_density;
-		  porosity                      = parameters.material_0_porosity;
-		  degree_of_saturation          = parameters.material_0_degree_of_saturation;
-		  relationship                  = parameters.material_0_thermal_conductivity_relationship;
-	  }
+	    {
+	      thermal_conductivity_solids   = parameters.material_0_thermal_conductivity_solids;
+	      specific_heat_capacity_solids = parameters.material_0_specific_heat_capacity;
+	      density_solids                = parameters.material_0_density;
+	      porosity                      = parameters.material_0_porosity;
+	      degree_of_saturation          = parameters.material_0_degree_of_saturation;
+	      relationship                  = parameters.material_0_thermal_conductivity_relationship;
+	      energy_factor =0.;
+	    }
 	  else if (cell_center<=-1.*parameters.material_1_depth &&
-			  cell_center>-1.*(parameters.material_1_depth+parameters.material_1_thickness))/*layer 1*/
-	  {
-		  thermal_conductivity_solids   = parameters.material_1_thermal_conductivity_solids;
-		  specific_heat_capacity_solids = parameters.material_1_specific_heat_capacity;
-		  density_solids                = parameters.material_1_density;
-		  porosity                      = parameters.material_1_porosity;
-		  degree_of_saturation          = parameters.material_1_degree_of_saturation;
-		  relationship                  = parameters.material_1_thermal_conductivity_relationship;
+		   cell_center>-1.*(parameters.material_1_depth+parameters.material_1_thickness))/*layer 1*/
+	    {
+	      thermal_conductivity_solids   = parameters.material_1_thermal_conductivity_solids;
+	      specific_heat_capacity_solids = parameters.material_1_specific_heat_capacity;
+	      density_solids                = parameters.material_1_density;
+	      porosity                      = parameters.material_1_porosity;
+	      degree_of_saturation          = parameters.material_1_degree_of_saturation;
+	      relationship                  = parameters.material_1_thermal_conductivity_relationship;
+	      energy_factor =0.;
+	      
+	      if(timestep_number>3000)
+		degree_of_saturation= 0.;
 	  }
 	  else if (cell_center<=-1.* parameters.material_2_depth &&
 			  cell_center>-1.*(parameters.material_2_depth+parameters.material_2_thickness))/*layer 2*/
@@ -361,12 +369,6 @@ namespace TRL
 		  porosity                      = parameters.material_2_porosity;
 		  degree_of_saturation          = parameters.material_2_degree_of_saturation;
 		  relationship                  = parameters.material_2_thermal_conductivity_relationship;
-
-		  //  if(timestep_number>336) // Change according to the time steps of the experiments
-		  //  {
-		  //  thermal_conductivity      = 0.122;
-		  //  degree_of_saturation      = 0.;
-		  //  }
 	  }
 	  else if (cell_center<=-1.* parameters.material_3_depth &&
 			  cell_center>-1.*(parameters.material_3_depth+parameters.material_3_thickness))/*layer 3*/
@@ -418,7 +420,8 @@ namespace TRL
 			  porosity*derivative_degree_of_saturation_ice*
 			  (a-b);
 
-	  thermal_energy=cell_diameter*
+	  thermal_energy=energy_factor*
+	    cell_diameter*
 			  (Hc*((   theta_temperature)*VectorTools::point_value(dof_handler,    solution,Point<dim>(cell_center))
 	              +(1.-theta_temperature)*VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell_center))
 	              -reference_temperature)
@@ -768,6 +771,49 @@ namespace TRL
   }
 
   template <int dim>
+  void Heat_Pipe<dim>::fill_output_vectors()
+  {
+	  /*
+	   * Extract and save temperatures at selected coordinates.
+	   **/
+	  if (dim==1)
+	  {
+		  std::vector<double> temp_vector;
+		  if (temperatures_at_points.size()==0)
+		  {
+			  for (unsigned int i=0; i<depths_coordinates.size(); i++)
+				  temp_vector
+				  .push_back(VectorTools::point_value(dof_handler,solution,
+						  Point<dim>(-1.*depths_coordinates[i][2])));
+		  }
+		  else
+		  {
+			  for (unsigned int i=0; i<depths_coordinates.size(); i++)
+				  temp_vector
+				  .push_back(VectorTools::point_value(dof_handler,solution,
+						  Point<dim>(-1.*depths_coordinates[i][2])));
+		  }
+		  //temp_vector.push_back(solution.l1_norm());
+		  temperatures_at_points.push_back(temp_vector);
+		  /*
+		   * Save them to some file.
+		   */
+		  output_file << timestep_number << "\t" << timestep_number*time_step;
+		  for (unsigned int i=0; i<temp_vector.size(); i++)
+			  output_file << "\t" << std::setprecision(5) << temp_vector[i];
+
+		  output_file << "\t" << std::setprecision(5) << column_thermal_energy;
+		  output_file << std::endl;
+	  }
+	  else
+	  {
+		  std::cout << "Error in output_results function.\n"
+				  << "Currently implement only for 1D\n";
+		  throw 1;
+	  }
+  }
+
+  template <int dim>
   void Heat_Pipe<dim>::output_results()
   {
 	  std::vector<double> ice_saturation_int;
@@ -810,42 +856,6 @@ namespace TRL
 
 	  std::ofstream output (filename.c_str());
 	  data_out.write_vtu (output);
-	  /*
-	   * Extract and save temperatures at selected coordinates
-	   */
-	  if (dim==1)
-	  {
-		  std::vector<double> temp_vector;
-		  if (temperatures_at_points.size()==0)
-		  {
-			  for (unsigned int i=0; i<depths_coordinates.size(); i++)
-				  temp_vector
-				  .push_back(VectorTools::point_value(dof_handler,solution,
-						  Point<dim>(-1.*depths_coordinates[i][2])));
-		  }
-		  else
-		  {
-			  for (unsigned int i=0; i<depths_coordinates.size(); i++)
-				  temp_vector
-				  .push_back(VectorTools::point_value(dof_handler,solution,
-						  Point<dim>(-1.*depths_coordinates[i][2])));
-		  }
-		  temperatures_at_points.push_back(temp_vector);
-		  /*
-		   * Save them to some file.
-		   */
-		  output_file << timestep_number;
-		  for (unsigned int i=0; i<temp_vector.size(); i++)
-			  output_file << "\t" << std::setprecision(5) << temp_vector[i];
-		  output_file << "\t" << std::setprecision(5) << column_thermal_energy;
-		  output_file << std::endl;
-	  }
-	  else
-	  {
-		  std::cout << "Error in output_results function.\n"
-				  << "Currently implement only for 1D\n";
-		  throw 1;
-	  }
   }
 
   template <int dim>
@@ -872,16 +882,54 @@ namespace TRL
 
 			  std::cout << "\tAvailable surface data lines: " << met_data.size()
 									  << std::endl << std::endl;
-		  }
-		  old_room_temperature    = met_data[timestep_number-1][1];
-		  new_room_temperature    = met_data[timestep_number  ][1];
-		  old_surface_temperature = met_data[timestep_number-1][0];
-		  new_surface_temperature = met_data[timestep_number  ][0];
 
-//		  old_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-//		  new_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
-//		  old_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-//		  new_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
+			  std::vector< std::pair<double,double> > table_temperature_surface;
+			  std::vector< std::pair<double,double> > table_temperature_room;
+			  for (unsigned int i=0; i<met_data.size(); i++)
+			  {
+				  table_temperature_surface.push_back(std::make_pair(met_data[i][0],met_data[i][1]));
+				  table_temperature_room.push_back(std::make_pair(met_data[i][0],met_data[i][2]));
+			  }
+
+			  for (double t=table_temperature_surface[0].first;
+					  t<table_temperature_surface[table_temperature_surface.size()-1].first; t+=time_step)
+			  {
+				  std::vector<double> row_interpolated_temperature_surface;
+				  row_interpolated_temperature_surface.push_back(t);
+				  row_interpolated_temperature_surface.push_back(data_tools.interpolate_data(table_temperature_surface, t));
+
+				  interpolated_temperature_surface.push_back(row_interpolated_temperature_surface);
+
+				  std::vector<double> row_interpolated_temperature_room;
+				  row_interpolated_temperature_room.push_back(t);
+				  row_interpolated_temperature_room.push_back(data_tools.interpolate_data(table_temperature_room, t));
+
+				  interpolated_temperature_room.push_back(row_interpolated_temperature_room);
+			  }
+
+//			  for (unsigned int i=0; i<interpolated_temperature_surface.size(); i++)
+//			  {
+//				  std::cout << interpolated_temperature_surface[i][0] << "\t"
+//						  << interpolated_temperature_surface[i][1] << "\t"
+//						  << interpolated_temperature_room[i][1] << "\n";
+//			  }
+
+		  }
+
+		  // old_room_temperature    = interpolated_temperature_room[timestep_number-1][1];
+		  // new_room_temperature    = interpolated_temperature_room[timestep_number  ][1];
+		  // old_surface_temperature = interpolated_temperature_surface[timestep_number-1][1];
+		  // new_surface_temperature = interpolated_temperature_surface[timestep_number  ][1];
+		  
+//		  old_room_temperature    = met_data[timestep_number-1][1];
+//		  new_room_temperature    = met_data[timestep_number  ][1];
+//		  old_surface_temperature = met_data[timestep_number-1][0];
+//		  new_surface_temperature = met_data[timestep_number  ][0];
+
+		  old_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
+		  new_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
+		  old_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
+		  new_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
 	  }
 
 
@@ -902,10 +950,10 @@ namespace TRL
 
 
 		  }
-		  old_point_source_magnitude =point_source_magnitudes[timestep_number-1][1];
-		  new_point_source_magnitude =point_source_magnitudes[timestep_number  ][1];
-//		  old_point_source_magnitude =-point_source_magnitudes[timestep_number-1][1]*sin((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-//		  new_point_source_magnitude =-point_source_magnitudes[timestep_number  ][1]*sin((2.*M_PI/86400)*((timestep_number  )*time_step-54000));
+		  // old_point_source_magnitude =point_source_magnitudes[timestep_number-1][1];
+		  // new_point_source_magnitude =point_source_magnitudes[timestep_number  ][1];
+		  old_point_source_magnitude =-point_source_magnitudes[timestep_number-1][1]*sin((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
+		  new_point_source_magnitude =-point_source_magnitudes[timestep_number  ][1]*sin((2.*M_PI/86400)*((timestep_number  )*time_step-54000));
 	  }
   }
 
@@ -926,6 +974,7 @@ namespace TRL
       the initial condition matrix.
     */
     std::vector< std::vector<int> > dummy_matrix;
+
     std::vector< std::vector<double> > initial_condition;
     DataTools data_tools;
     data_tools.read_data(filenames,
@@ -995,39 +1044,58 @@ namespace TRL
 	  initial_condition_temperature();
 
 	  {
-		  std::cout.setf( std::ios::fixed);
-		  std::cout.precision(3);
-		  std::cout << "\tPosition of material layers:\n"
-				  << "\t\tLayer 1: from "
-				  << parameters.material_0_depth << " to "
-				  << parameters.material_0_depth+parameters.material_0_thickness << "\t"
-				  << "k:" << parameters.material_0_thermal_conductivity_solids << " W/mK\t"
-				  << "Cp:" << (parameters.material_0_specific_heat_capacity*
-					  parameters.material_0_density)/1000. << " MJ/m3K\n"
-				  << "\t\tLayer 2: from "
-				  << parameters.material_1_depth << " to "
-				  << parameters.material_1_depth+parameters.material_1_thickness << "\t"
-				  << "k:" << parameters.material_1_thermal_conductivity_solids << " W/mK\t"
-				  << "Cp:" << (parameters.material_1_specific_heat_capacity*
-					  parameters.material_1_density)/1000. << " MJ/m3K\n"
-				  << "\t\tLayer 3: from "
-				  << parameters.material_2_depth << " to "
-				  << parameters.material_2_depth+parameters.material_2_thickness << "\t"
-				  << "k:" << parameters.material_2_thermal_conductivity_solids << " W/mK\t"
-				  << "Cp:" << (parameters.material_2_specific_heat_capacity*
-					  parameters.material_2_density)/1000. << "MJ/m3K\n"
-				  << "\t\tLayer 4: from "
-				  << parameters.material_3_depth << " to "
-				  << parameters.material_3_depth+parameters.material_3_thickness << "\t"
-				  << "k:" << parameters.material_3_thermal_conductivity_solids << " W/mK\t"
-				  << "Cp:" << (parameters.material_3_specific_heat_capacity*
-					  parameters.material_3_density)/1000. << "MJ/m3K\n"
-				  << "\t\tLayer 5: from "
-				  << parameters.material_4_depth << " to "
-				  << parameters.material_4_depth+parameters.material_4_thickness << "\t"
-				  << "k:" << parameters.material_4_thermal_conductivity_solids << " W/mK\t"
-				  << "Cp:" << (parameters.material_4_specific_heat_capacity*
-					  parameters.material_4_density)/1000. << "MJ/m3K\n";
+	    double k=0.;
+	    double Cp=0.;
+	    double E=0.;
+	    double Si=0.;
+	    material_data(-parameters.material_0_depth-0.5*parameters.material_0_thickness,
+			  25.,parameters.domain_size/pow(parameters.refinement_level,2.),
+			  k,Cp,E,Si);
+	    
+	    std::cout.setf( std::ios::fixed);
+	    std::cout.precision(3);
+	    std::cout << "\tPosition of material layers:\n"
+		      << "\t\tLayer 1: from "
+		      << parameters.material_0_depth << " to "
+		      << parameters.material_0_depth+parameters.material_0_thickness << "\t"
+		      << "k(@25C) :" << k << " W/mK\t"
+		      << "Cp(@25C):" << Cp/1.E6 << " MJ/m3K\n";
+
+	    material_data(-parameters.material_1_depth-0.5*parameters.material_1_thickness,
+			  25.,parameters.domain_size/pow(parameters.refinement_level,2.),
+			  k,Cp,E,Si);
+	    std::cout << "\t\tLayer 2: from "
+		      << parameters.material_1_depth << " to "
+		      << parameters.material_1_depth+parameters.material_1_thickness << "\t"
+		      << "k(@25C) :" << k << " W/mK\t"
+		      << "Cp(@25C):" << Cp/1.E6 << " MJ/m3K\n";
+	    
+	    material_data(-parameters.material_2_depth-0.5*parameters.material_2_thickness,
+			  25.,parameters.domain_size/pow(parameters.refinement_level,2.),
+			  k,Cp,E,Si);
+	    std::cout << "\t\tLayer 3: from "
+		      << parameters.material_2_depth << " to "
+		      << parameters.material_2_depth+parameters.material_2_thickness << "\t"
+		      << "k(@25C) :" << k << " W/mK\t"
+		      << "Cp(@25C):" << Cp/1.E6 << "MJ/m3K\n";
+
+	    material_data(-parameters.material_3_depth-0.5*parameters.material_3_thickness,
+			  25.,parameters.domain_size/pow(parameters.refinement_level,2.),
+			  k,Cp,E,Si);
+	    std::cout << "\t\tLayer 4: from "
+		      << parameters.material_3_depth << " to "
+		      << parameters.material_3_depth+parameters.material_3_thickness << "\t"
+		      << "k(@25C) :" << k << " W/mK\t"
+		      << "Cp(@25C):" << Cp/1.E6 << "MJ/m3K\n";
+
+	    material_data(-parameters.material_4_depth-0.5*parameters.material_4_thickness,
+			  25.,parameters.domain_size/pow(parameters.refinement_level,2.),
+			  k,Cp,E,Si);
+	    std::cout << "\t\tLayer 5: from "
+		      << parameters.material_4_depth << " to "
+		      << parameters.material_4_depth+parameters.material_4_thickness << "\t"
+		      << "k(@25C) :" << k << " W/mK\t"
+		      << "Cp(@25C):" << Cp/1.E6 << "MJ/m3K\n";
 	  }
 
 	  int output_count=0;
@@ -1043,8 +1111,8 @@ namespace TRL
 		  double solution_l1_norm_current_iteration;
 		  do
 		  {
-			  if (iteration!=0 && iteration%5==0)
-				  time_step/=2.;
+//			  if (iteration!=0 && iteration%5==0)
+//				  time_step/=2.;
 
 			  assemble_system_temperature();
 
@@ -1055,29 +1123,29 @@ namespace TRL
 			  total_error=
 			    1.-std::fabs(solution_l1_norm_previous_iteration/solution_l1_norm_current_iteration);
 
-//			  std::cout << "\titeration " << iteration << "\tT@(0.0): "
-//					  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.00)) << "\t"
-//					  << "\n";
+			  // std::cout << "\titeration " << iteration << "\tT@(0.0): "
+			  //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.00)) << "\n";
 
 			  iteration++;
 		  }while (std::fabs(total_error)>5E-4);
 		  
 		  time+=time_step;
 
-		  std::cout << "Time step " << timestep_number << "\ttime: " << time/60 << " min\tDt: "
-				  << time_step << " s\t#it: " << iteration
-				  << "\tEnergy_surface: " << 100.*time << " J"
-				  << "\tEnergy_column: " << column_thermal_energy << " J"
-				  << "\tEnergy_error: "
-				  << -100.*time-column_thermal_energy << "\t"
-//				  << "Ta:\t" << new_surface_temperature << "\t"
-//				  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.00)) << "\t"
-//				  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.20)) << "\t"
-//				  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.40)) << "\t"
-//				  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.60)) << "\t"
-//				  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.80)) << "\t"
-//				  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*1.00)) << "\t"
-				  << "\n";
+		  if (parameters.output_data_in_terminal==true)
+			  std::cout << "Time step " << timestep_number << "\ttime: " << time/60 << " min\tDt: "
+			  << time_step << " s\t#it: " << iteration
+			  //  << "\tEnergy_surface: " << 100.*time << " J"
+			  //  << "\tEnergy_column: " << column_thermal_energy << " J"
+			  //  << "\tEnergy_error: "
+			  //  << -100.*time-column_thermal_energy << "\t"
+			  //  << "Ta:\t" << new_surface_temperature << "\t"
+			  //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.00)) << "\t"
+			  //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.20)) << "\t"
+			  //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.40)) << "\t"
+			  //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.60)) << "\t"
+			  //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.80)) << "\t"
+			  //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*1.00)) << "\t"
+			  << "\n";
 
 		  if (parameters.output_frequency!=0 &&
 			  time>output_count*parameters.output_frequency)
@@ -1085,11 +1153,17 @@ namespace TRL
 		      output_results();
 		      output_count++;
 		    }
+		  fill_output_vectors();
+
+		  // if (time==35.*3600.)
+		  //   for (unsigned int i=0; i<62; i++)
+		  //     std::cout << 0.01*i << "\t"
+		  // 		<< VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.01*i)) << "\n";
 		  
 		  old_solution=solution;
 
-		  if (iteration<5)
-			  time_step+=2.;
+//		  if (iteration<5)
+//			  time_step+=2.;
 	  }
 	  output_file.close();
 	  std::cout << "\t Job Done!!"

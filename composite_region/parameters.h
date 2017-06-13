@@ -85,6 +85,7 @@ struct AllParameters
 	double bottom_fixed_value;
 	bool fixed_at_top;
 	bool point_source;
+	bool output_data_in_terminal;
 
 	std::string boundary_condition_top;
 
@@ -93,6 +94,7 @@ struct AllParameters
   	std::string depths_file;
 	std::string point_source_file;
 	std::string output_directory;
+	std::string output_file;
 
 	static void declare_parameters (ParameterHandler &prm);
 	void parse_parameters (ParameterHandler &prm);
@@ -173,7 +175,7 @@ AllParameters<dim>::AllParameters ()
 	bottom_fixed_value=0.;
 	fixed_at_top=false;
 	point_source=false;
-
+	output_data_in_terminal=false;
 }
 
 template <int dim>
@@ -472,6 +474,14 @@ AllParameters<dim>::declare_parameters (ParameterHandler &prm)
 				Patterns::Anything(),
 				"name of output directory to store all"
 				"output files.");
+		prm.declare_entry("output file", "output_data.txt",
+				Patterns::Anything(), "Defines the name of the filename "
+						"to store the temperatures at the points defined "
+						"in the file 'depths_file'");
+		prm.declare_entry("output data in terminal", "true",
+				Patterns::Bool(),"if true, the program will generate output "
+						"in the terminal. Set to false to avoid cluttering "
+						"and speed up a bit the program.");
 	}
 	prm.leave_subsection();
 }
@@ -587,6 +597,8 @@ void AllParameters<dim>::parse_parameters (ParameterHandler &prm)
 	{
 		output_frequency	= prm.get_integer("output frequency");
 		output_directory	= prm.get	 ("output directory");
+		output_file         = prm.get    ("output file");
+		output_data_in_terminal=prm.get_bool("output data in terminal");
 	}
 	prm.leave_subsection();
 }
