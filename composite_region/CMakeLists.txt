@@ -7,9 +7,9 @@ DEAL_II_INITIALIZE_CACHED_VARIABLES()
 
 PROJECT(composite_region)
 
-INCLUDE_DIRECTORIES(/home/zerpiko/git/libraries)
+INCLUDE_DIRECTORIES(/mnt/c/Users/Jose/Documents/code/git/libraries)
 
-ADD_LIBRARY(mylib /home/zerpiko/git/libraries/DataTools.cpp /home/zerpiko/git/libraries/Names.cpp)
+ADD_LIBRARY(mylib /mnt/c/Users/Jose/Documents/code/git/libraries/DataTools.cpp /mnt/c/Users/Jose/Documents/code/git/libraries/Names.cpp)
 DEAL_II_SETUP_TARGET(mylib)
 
 ADD_EXECUTABLE(mycode composite_region.cc)
