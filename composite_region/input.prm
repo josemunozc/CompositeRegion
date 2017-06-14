@@ -1,7 +1,7 @@
 # Time stepping control
 subsection time stepping
-	set timestep number max	= 280 # maximum number of timesteps to execute (Multiply) 30*24*300
-	set time step		= 450 # simulation time step (Divide) 3600/300 (300=5min*60sec)
+	set timestep number max	= 20 # maximum number of timesteps to execute (Multiply) 30*24*300
+	set time step		= 3600 # simulation time step (Divide) 3600/300 (300=5min*60sec)
  	set theta scheme value	= 1.0
 end
 
@@ -22,87 +22,65 @@ subsection geometric data
 end
 
 subsection material data
-    set air density						=       1.25	# (kg/m3)
-    set air specific heat capacity		=       1.256	# (J/kgK)
-    set liquids density					=    1000.	# (kg/m3)
-    set liquids specific heat capacity	=    4186.	# (J/kgK)
-    set ice density						=     920.    # (kg/m3)
-    set ice specific heat capacity		=    1844.    # (J/kgK)
-    set reference temperature			=       0.	# (C) 
-    set freezing point					=      -0.1	# (C)
-    set alpha							=      -5.    # (dimensionless)
-    set latent heat						=  334000.	# (J/Kg)
-    set liquids thermal conductivity	=       0.57  # (W/mK)
-    set air thermal conductivity		=       0.025 # (W/mK)
     #
     #layer 0
     #
-    set material 0 degree of saturation			=    0.5	# (dimensionless)
-    set material 0 porosity						=    0.37	# (dimensionless)
-    set material 0 thermal conductivity solids  =    8.79	# (W/mK) 1st layer of soil   
-    set material 0 density						= 2660.	# (kg/m3) solid particles
-    set material 0 specific heat capacity		= 2010.	# (J/kgK) solid particles
+    set material 0 name				= quartz_1
+    set material 0 degree of saturation		=    0.5	# (dimensionless)
+    set material 0 porosity			=    0.37	# (dimensionless)
     set material 0 thermal conductivity relationship = donazzi
     # 
     #layer 1
     #
-    set material 1 degree of saturation			=    0.0  # (dimensionless)
-    set material 1 porosity						=    0.0  # (dimensionless)
-    set material 1 thermal conductivity	solids	=    0.22 # (W/mK) 1st layer of soil   
-    set material 1 density						= 1200.   # (kg/m3) solid particles
-    set material 1 specific heat capacity		= 1200.	  # (J/kgK) solid particles
+    set material 1 name				= pvc_1
+    set material 1 degree of saturation		=    0.0  # (dimensionless)
+    set material 1 porosity			=    0.0  # (dimensionless)
     set material 1 thermal conductivity relationship = bulk
     #
     #layer 2
     #
-    set material 2 degree of saturation			=    0.000  # (dimensionless)
-    set material 2 porosity						=    0.360  #0.343 # (dimensionless)
-    set material 2 thermal conductivity	solids	=    0.8 #1.102  # (W/mK) 1st layer of soil   
-    set material 2 density						= 2500.	    # (kg/m3) solid particles
-    set material 2 specific heat capacity		= 1175.     # (J/kgK) solid particles
+    set material 2 name				= glass_beads
+    set material 2 degree of saturation		=    0.000  # (dimensionless)
+    set material 2 porosity			=    0.360  #0.343 # (dimensionless)
     set material 2 thermal conductivity relationship = haigh
     #
     #layer 3
     #
-    set material 3 degree of saturation			=    0.0  # (dimensionless)
-    set material 3 porosity						=    0.00 # (dimensionless)
-    set material 3 thermal conductivity	solids	=    0.16 # (W/mK) 1st layer of soil   
-    set material 3 density						= 1440.	  # (kg/m3) solid particles
-    set material 3 specific heat capacity		=  900.	  # (J/kgK) solid particles
+    set material 3 name				= pvc_2
+    set material 3 degree of saturation		=    0.0  # (dimensionless)
+    set material 3 porosity			=    0.00 # (dimensionless)
     set material 3 thermal conductivity relationship = bulk
-	#
+    #
     #layer 4
     #
-    set material 4 degree of saturation			=    1.0  # (dimensionless)
-    set material 4 porosity						=    0.37 # (dimensionless)
-    set material 4 thermal conductivity	solids  =    8.79 # (W/mK) 1st layer of soil   
-    set material 4 density						= 2660.	  # (kg/m3) solid particles
-    set material 4 specific heat capacity		= 2010.	  # (J/kgK) solid particles
+    set material 4 name				= quartz_1
+    set material 4 degree of saturation		=    1.0  # (dimensionless)
+    set material 4 porosity			=    0.37 # (dimensionless)
     set material 4 thermal conductivity relationship = donazzi
 end
 
 # --------------------------------------------------
 # Boundary conditions
 subsection boundary conditions
-  set depths file			= depths.txt
+  set depths file		= depths.txt
   set heat loss factor		= 0. # 7.642 # W/m3K positive number, set to 0 to neglect heat losses
   
   #point source
-  set point source			= false  	# define if there is a point source in the domain  
+  set point source		= false  	# define if there is a point source in the domain  
   set point source file		= point_source.txt
   set point source depth	=  0.0  # (m)
   
   #top boundary
-  #set fixed at top			= true    # set to true to 1st kind b.c.
+  #set fixed at top		= true    # set to true to 1st kind b.c.
   set top fixed value file	= surface_temperature_dry.txt
-  set boundary condition top= first   #
+  set boundary condition top	= first   #
   
   #bottom boundary
   set fixed at bottom		= false    #
   set bottom fixed value	= 21.764	# 
 
   #initial condition
-  set initial condition file = initial_condition_analytic.txt
+  set initial condition file	= initial_condition_analytic.txt
 end
 
 # --------------------------------------------------
@@ -110,6 +88,6 @@ end
 subsection other options
 	set output frequency	= 3600	# every X seconds, positive integer, set to 0 to prevent output file generation
 	set output directory	= output
-	set output file			= output_data_analytic.txt #
+	set output file		= output_data_analytic.txt #
 	set output data in terminal = true #
 end
