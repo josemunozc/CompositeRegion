@@ -9,7 +9,8 @@ PROJECT(composite_region)
 
 INCLUDE_DIRECTORIES(/home/zerpiko/git/libraries)
 
-ADD_LIBRARY(mylib /home/zerpiko/git/libraries/DataTools.cpp /home/zerpiko/git/libraries/Names.cpp)
+ADD_LIBRARY(mylib /home/zerpiko/git/libraries/DataTools.cpp /home/zerpiko/git/libraries/Names.cpp /home/zerpiko/git/libraries/Material.cpp /home/zerpiko/git/libraries/PorousMaterial.cpp)
+
 DEAL_II_SETUP_TARGET(mylib)
 
 ADD_EXECUTABLE(mycode composite_region.cc)

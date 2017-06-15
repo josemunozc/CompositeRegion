@@ -21,6 +21,10 @@
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/data_out.h>
 
+#include <PorousMaterial.h>
+#include <DataTools.h>
+#include <Names.h>
+
 #include <fstream>
 #include <iostream>
 #include <math.h>
@@ -28,341 +32,7 @@
 #include <string>
 #include <vector>
 #include <tuple>
-#include <DataTools.h>
-#include <Names.h>
 
-class Material
-{
-public:
-  Material(std::string material_name);
-  Material(double solids_thermal_conductivity_,
-	   double solids_density_,
-	   double solids_specific_heat_capacity_);
-  virtual double thermal_conductivity();
-  virtual double density();
-  virtual double specific_heat_capacity();
-protected:
-  double solids_thermal_conductivity;
-  double solids_density;
-  double solids_specific_heat_capacity;
-  /*
-   * material name - thermal conductivity [W/mK] - density [kg/m3] - specific heat capacity [J/kgK]
-   */
-  std::map<std::string,std::array<double,3> > material_data
-  ={
-    {"dummy_1"    ,{1.  , 2.     ,    3.  }},
-    {"dummy_2"    ,{4.  , 5.     ,    6.  }},
-    {"quartz_1"   ,{8.79, 2660.00, 2010.00}},
-    {"pvc_1"      ,{0.22, 1200.00, 1200.00}},
-    {"glass_beads",{0.80, 2500.00, 1175.00}},
-    {"pvc_2"      ,{0.16, 1440.00,  900.00}}
-  };
-};
-
-Material::Material(std::string material_name_)
-{
-  solids_thermal_conductivity=0.;
-  solids_density=0.;
-  solids_specific_heat_capacity=0.;
-  
-  std::map<std::string,std::array<double,3> >::iterator it;
-  it = material_data.find(material_name_);
-  if(it!=material_data.end())
-    {
-      solids_thermal_conductivity=it->second[0];
-      solids_density=it->second[1];
-      solids_specific_heat_capacity=it->second[2];
-    }
-  else
-    {
-      std::cout << "Error. Material not found\n";
-    }
-}
-
-Material::Material(double solids_thermal_conductivity_,
-		   double solids_density_,
-		   double solids_specific_heat_capacity_)
-  :
-  solids_thermal_conductivity(solids_thermal_conductivity_),
-  solids_density(solids_density_),
-  solids_specific_heat_capacity(solids_specific_heat_capacity_)
-{
-  
-}
-
-double Material::thermal_conductivity()
-{
-  return solids_thermal_conductivity;
-}
-
-double Material::density()
-{
-  return solids_density;
-}
-
-double Material::specific_heat_capacity()
-{
-  return solids_specific_heat_capacity;
-}
-/*
-* This class defines a material that in principle can be composed of three 
-* constituents: solid, liquid and gas.
-*/
-class PorousMaterial:public Material
-{
-public:
-  PorousMaterial(std::string material_name_,
-		 double porosity_=0.,
-		 double degree_of_saturation_=0.);
-
-  PorousMaterial(double solids_thermal_conductivity_,
-  		 double solids_density_,
-  		 double solids_specific_heat_capacity_,
-		 double porosity_=0.,
-		 double degree_of_saturation_=0.);
-
-  virtual double thermal_conductivity();
-  virtual double thermal_conductivity(const std::string relationship);
-
-  void set_liquid_properties(double liquid_thermal_conductivity_,
-			     double liquid_density_,
-			     double liquid_specific_heat_capacity_);
-  void set_gas_properties(double gas_thermal_conductivity_,
-			  double gas_density_,
-			  double gas_specific_heat_capacity_);
-  void set_ice_properties(double ice_thermal_conductivity_,
-			  double ice_density_,
-			  double ice_specific_heat_capacity_);
-  void set_freezing_properties(double freezing_point_,
-			       double coefficient_alpha_,
-			       double reference_temperature_,
-			       double latent_heat_of_fusion_);
-  double degree_of_saturation_ice(const double temperature);
-  double degree_of_saturation_ice_derivative(const double temperature);
-  double volumetric_heat_capacity(const double temperature);
-  double thermal_energy(const double temperature);
-  
-private:
-  void init_liquid_gas_and_ice_parameters();
-
-  void init_freezing_parameters();
-  
-  double porosity;
-  double degree_of_saturation;
-  
-  double liquid_thermal_conductivity;
-  double liquid_density;
-  double liquid_specific_heat_capacity;
-
-  double gas_thermal_conductivity;
-  double gas_density;
-  double gas_specific_heat_capacity;
-
-  double ice_thermal_conductivity;
-  double ice_density;
-  double ice_specific_heat_capacity;
-  
-  double freezing_point;
-  double coefficient_alpha;
-  double reference_temperature;
-  double latent_heat_of_fusion;
-};
-
-PorousMaterial::PorousMaterial(std::string material_name_,
-			       double porosity_,
-			       double degree_of_saturation_)
-  :Material(material_name_),
-   porosity(porosity_),
-   degree_of_saturation(degree_of_saturation_)
-{
-  init_liquid_gas_and_ice_parameters();
-  init_freezing_parameters();
-}
-
-PorousMaterial::PorousMaterial(double solids_thermal_conductivity_,
-			       double solids_density_,
-			       double solids_specific_heat_capacity_,
-			       double porosity_,
-			       double degree_of_saturation_)
-  :Material(solids_thermal_conductivity_,
-	    solids_density_,
-	    solids_specific_heat_capacity_),
-   porosity(porosity_),
-   degree_of_saturation(degree_of_saturation_)
-{
-  init_liquid_gas_and_ice_parameters();
-  init_freezing_parameters();
-}
-
-void PorousMaterial::init_liquid_gas_and_ice_parameters()
-{
-  liquid_thermal_conductivity  =   0.57;// [W/mK]
-  liquid_density               =1000.00;// [kg/m3]
-  liquid_specific_heat_capacity=4186.00; // [J/kgK]
-  
-  gas_thermal_conductivity  =0.025; // [W/mK]
-  gas_density               =1.25 ; // [kg/m3]
-  gas_specific_heat_capacity=1.256; // [J/kgK]
-
-  ice_thermal_conductivity  =   2.22; //(@  0C) [W/mK]
-  ice_density               = 920.00; //(@-30C)[kg/m3]
-  ice_specific_heat_capacity=1844.00; //(@-30C)[J/kgK]
-}
-
-void PorousMaterial::init_freezing_parameters()
-{
-  freezing_point       =     0.0; // [C]
-  coefficient_alpha    =    -5.0; // [nondimensional?]
-  reference_temperature=     0.0; // [C]
-  latent_heat_of_fusion=334000.0; // [J/K]
-}
-
-void PorousMaterial::set_liquid_properties(double liquid_thermal_conductivity_,
-					   double liquid_density_,
-					   double liquid_specific_heat_capacity_)
-{
-  liquid_thermal_conductivity=liquid_thermal_conductivity_;
-  liquid_density=liquid_density_;
-  liquid_specific_heat_capacity=liquid_specific_heat_capacity_;
-}
-void PorousMaterial::set_gas_properties(double gas_thermal_conductivity_,
-					double gas_density_,
-					double gas_specific_heat_capacity_)
-{
-  gas_thermal_conductivity=gas_thermal_conductivity_;
-  gas_density=gas_density_;
-  gas_specific_heat_capacity=gas_specific_heat_capacity_;
-}
-
-void PorousMaterial::set_ice_properties(double ice_thermal_conductivity_,
-					double ice_density_,
-					double ice_specific_heat_capacity_)
-{
-  ice_thermal_conductivity=ice_thermal_conductivity_;
-  ice_density=ice_density_;
-  ice_specific_heat_capacity=ice_specific_heat_capacity_;
-}
-
-void PorousMaterial::set_freezing_properties(double freezing_point_,
-					     double coefficient_alpha_,
-					     double reference_temperature_,
-					     double latent_heat_of_fusion_)
-{
-  freezing_point=freezing_point_;
-  coefficient_alpha=coefficient_alpha_;
-  reference_temperature=reference_temperature_;
-  latent_heat_of_fusion=latent_heat_of_fusion_;
-}
-
-double PorousMaterial::thermal_conductivity()
-{
-  return thermal_conductivity("donazzi");
-}
-
-double PorousMaterial::thermal_conductivity(const std::string relationship)
-{
-  double thermal_conductivity=0.;
-  if (relationship.compare("donazzi")==0)
-    {
-      /*
-       * Estimation of thermal conductivity from Donazzi (1979)
-       * Donazzi neglects the contribution of air. But the formulation
-       * is applicable to unsaturated soils because it includes degree
-       * of saturation.
-       * */
-      thermal_conductivity
-	=1./(pow(1./liquid_thermal_conductivity,porosity)*
-	     pow(1./solids_thermal_conductivity,1.-porosity)*
-	     exp(3.08*(1.-degree_of_saturation)*porosity));
-    }
-  else if (relationship.compare("haigh")==0)
-    {
-      /*
-       * Estimation of thermal conductivity from Haigh (2012)
-       *
-       * */
-      double void_ratio=porosity/(1.-porosity);
-      double E=(2.*void_ratio-1.)/3.;//xi
-      double B=(1./3.)*acos((2.*(1.+3.*E)*(1.-degree_of_saturation)-pow(1.+E,3.))/pow(1.+E,3.));
-      double X=0.5*(1.+E)*(1.+cos(B)-pow(3.,0.5)*sin(B));
-      double a_w=liquid_thermal_conductivity/solids_thermal_conductivity;
-      double a_a=gas_thermal_conductivity/solids_thermal_conductivity;
-
-      thermal_conductivity
-	=1.58*solids_thermal_conductivity
-	*(2.*pow(1.+E,2.)*
-	  ((a_w/pow(1.-a_w,2.))*log(((1+E)+(a_w-1.)*X)/(E+a_w))+
-	   (a_a/pow(1.-a_a,2.))*log((1.+E)/((1+E)+(a_a-1.)*X)))
-	  +(2.*(1.+E)/((1.-a_w)*(1.-a_a)))*((a_w-a_a)*X-(1.-a_a)*a_w));
-    }
-  else if (relationship.compare("bulk")==0)
-    {
-      /*
-       * This only returns the same value that is given as input in the input
-       * file. Is meant to let you test quickly values for this parameter or
-       * for materials that are not porous (like plastics).
-       * */
-      thermal_conductivity
-	=solids_thermal_conductivity;
-    }
-  else
-    {
-      std::cout << "Error. Wrong thermal conductivity relationship"
-	" requested not currently implemented.\n";
-      throw -1;
-    }
-  return thermal_conductivity;
-}
-
-double PorousMaterial::degree_of_saturation_ice(const double temperature)
-{
-  if (temperature<=freezing_point)
-    return 1.-pow(1.-(temperature-freezing_point),coefficient_alpha);
-  else
-    return 0.;
-}
-
-double PorousMaterial::degree_of_saturation_ice_derivative(const double temperature)
-{
-  if (temperature<=freezing_point)
-    return coefficient_alpha*pow(1.-(temperature-freezing_point),coefficient_alpha-1.);
-  else
-    return 0.;
-}
-
-double PorousMaterial::volumetric_heat_capacity(const double temperature)
-{
-  double Hc=
-    (1.-degree_of_saturation_ice(temperature))*
-    porosity*degree_of_saturation*liquid_specific_heat_capacity*liquid_density
-    +porosity*gas_specific_heat_capacity*gas_density*(1.-degree_of_saturation)
-    +solids_specific_heat_capacity*solids_density*(1.-porosity)
-    +porosity*degree_of_saturation*degree_of_saturation_ice(temperature)*
-    ice_specific_heat_capacity*ice_density;
-  double a=
-    (temperature-reference_temperature)*
-    (degree_of_saturation*ice_density*ice_specific_heat_capacity
-     -degree_of_saturation*liquid_density*liquid_specific_heat_capacity);
-  double b=
-    degree_of_saturation*ice_density*latent_heat_of_fusion;
-  return Hc+porosity*degree_of_saturation_ice_derivative(temperature)*(a-b);;
-}
-
-double PorousMaterial::thermal_energy(const double temperature)
-{
-  double Hc=
-    (1.-degree_of_saturation_ice(temperature))*
-    porosity*degree_of_saturation*liquid_specific_heat_capacity*liquid_density
-    +porosity*gas_specific_heat_capacity*gas_density*(1.-degree_of_saturation)
-    +solids_specific_heat_capacity*solids_density*(1.-porosity)
-    +porosity*degree_of_saturation*degree_of_saturation_ice(temperature)*
-    ice_specific_heat_capacity*ice_density;
-  return (Hc*(temperature-reference_temperature)
-	  -latent_heat_of_fusion*porosity*degree_of_saturation*
-	  degree_of_saturation_ice(temperature)*ice_density);
-}
-
-//--------------------------------------------------------------------------------------
 namespace TRL
 {
   using namespace dealii;
@@ -388,20 +58,16 @@ namespace TRL
     void fill_output_vectors();
     void update_met_data ();
 
-    void material_data(const double x/*(m)*/,
-		       const double temperature/*(C)*/,
-		       const double cell_diameter/*(m)*/,
+    void material_data(const double cell_center/*(m)*/,
+		       const double cell_temperature/*(C)*/,
 		       double &thermal_conductivity/*(W/mK)*/,
 		       double &total_volumetric_heat_capacity/*(J/m3K)*/,
-		       double &thermal_energy/*J*/,
 		       double &ice_saturation);
-
-    double thermal_conductivity_relations(const std::string relationship,
-					  const double porosity,
-					  const double degree_of_saturation,
-					  double thermal_conductivity_solids);
-
+    double cell_thermal_energy(const double cell_center/*(m)*/,
+			       const double cell_temperature/*(C)*/,
+			       const double cell_diameter/*(m)*/);
     double thermal_losses(const double temperature_gradient/*(m)*/);
+    unsigned int find_layer(double cell_center);
     //double snow_surface_heat_flux(double surface_temperature); //(W/m2)
 
     Triangulation<dim>   triangulation;
@@ -409,9 +75,7 @@ namespace TRL
     FE_Q<dim>            fe;
 
     ConstraintMatrix     hanging_node_constraints;
-
     SparsityPattern      sparsity_pattern;
-
     SparseMatrix<double> system_matrix;
     SparseMatrix<double> mass_matrix;
     SparseMatrix<double> laplace_matrix_new;
@@ -591,10 +255,8 @@ namespace TRL
   template <int dim>
   void Heat_Pipe<dim>::material_data(const double cell_center,
 				     const double cell_temperature,
-				     const double cell_diameter,
 				     double &thermal_conductivity,
 				     double &total_volumetric_heat_capacity,
-				     double &thermal_energy,
 				     double &ice_saturation)
   {
     /*
@@ -618,41 +280,13 @@ namespace TRL
     /*
      * These variables are assumed to be constants. That's why we defined them inside the function.
      * */
-    unsigned int layer_number=0;
-    if (cell_center>-1.*(parameters.material_0_depth+parameters.material_0_thickness))/*layer 0*/
-      {
-	layer_number=0;
-      }
-    else if (cell_center<=-1.*parameters.material_1_depth &&
-	     cell_center>-1.*(parameters.material_1_depth+parameters.material_1_thickness))/*layer 1*/
-      {
-	layer_number=1;
-      }
-    else if (cell_center<=-1.* parameters.material_2_depth &&
-	     cell_center>-1.*(parameters.material_2_depth+parameters.material_2_thickness))/*layer 2*/
-      {
-	layer_number=2;
-      }
-    else if (cell_center<=-1.* parameters.material_3_depth &&
-	     cell_center>-1.*(parameters.material_3_depth+parameters.material_3_thickness))/*layer 3*/
-      {
-	layer_number=3;
-      }
-    else if (cell_center<=-1.*parameters.material_4_depth)/*layer 4*/
-      {
-	layer_number=4;
-      }
-    else
-      {
-	std::cout << "Error. Cell centre not found." << std::endl;
-	throw -1;
-      }
-
+    unsigned int layer_number
+      =find_layer(cell_center);
     std::string material_name  =std::get<0>(layer_data[layer_number]);
     double porosity            =std::get<1>(layer_data[layer_number]);
     double degree_of_saturation=std::get<2>(layer_data[layer_number]);
     std::string relationship   =std::get<3>(layer_data[layer_number]);
-
+    
     PorousMaterial *porous_material = new PorousMaterial(material_name,
 							 porosity,
 							 degree_of_saturation);
@@ -662,9 +296,7 @@ namespace TRL
       =porous_material->volumetric_heat_capacity(cell_temperature);
     ice_saturation
       =porous_material->degree_of_saturation_ice(cell_temperature);
-    thermal_energy
-      =cell_diameter*
-      porous_material->thermal_energy((   theta_temperature)*VectorTools::point_value(dof_handler,    solution,Point<dim>(cell_center))+(1.-theta_temperature)*VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell_center)));
+
 
     if (thermal_conductivity<0. || total_volumetric_heat_capacity<0.)
       {
@@ -678,7 +310,49 @@ namespace TRL
   }
 
   template <int dim>
-  double Heat_Pipe<dim>::thermal_losses(double const temperature_gradient)
+  double Heat_Pipe<dim>::cell_thermal_energy(const double cell_center,
+					     const double cell_temperature,
+					     const double cell_diameter)
+  {
+    unsigned int layer_number
+      =find_layer(cell_center);
+    std::string material_name  =std::get<0>(layer_data[layer_number]);
+    double porosity            =std::get<1>(layer_data[layer_number]);
+    double degree_of_saturation=std::get<2>(layer_data[layer_number]);
+
+    PorousMaterial *porous_material = new PorousMaterial(material_name,
+							 porosity,
+							 degree_of_saturation);
+    return cell_diameter*porous_material->thermal_energy(cell_temperature);
+  }
+  
+  template <int dim>
+  unsigned int Heat_Pipe<dim>::find_layer(double cell_center)
+  {
+    unsigned int layer_number=0;
+    if (cell_center>-1.*(parameters.material_0_depth+parameters.material_0_thickness))
+      layer_number=0;
+    else if (cell_center<=-1.*parameters.material_1_depth &&
+	     cell_center>-1.*(parameters.material_1_depth+parameters.material_1_thickness))
+      layer_number=1;
+    else if (cell_center<=-1.* parameters.material_2_depth &&
+	     cell_center>-1.*(parameters.material_2_depth+parameters.material_2_thickness))
+      layer_number=2;
+    else if (cell_center<=-1.* parameters.material_3_depth &&
+	     cell_center>-1.*(parameters.material_3_depth+parameters.material_3_thickness))
+      layer_number=3;
+    else if (cell_center<=-1.*parameters.material_4_depth)
+      layer_number=4;
+    else
+      {
+	std::cout << "Error. Cell centre not found." << std::endl;
+	throw -1;
+      }
+    return layer_number;
+  }
+  
+  template <int dim>
+  double Heat_Pipe<dim>::thermal_losses(const double temperature_gradient)
   {
     /*
      * At the moment is the convective coefficient is read from the input
@@ -802,7 +476,7 @@ namespace TRL
 	cell_laplace_matrix_new = 0;
 	cell_laplace_matrix_old = 0;
 	cell_rhs                = 0;
-
+	
 	double average_cell_temperature=
 	  (   theta_temperature)*VectorTools::point_value(dof_handler,    solution,Point<dim>(cell->center()[0]))+
 	  (1.-theta_temperature)*VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell->center()[0]));
@@ -812,13 +486,13 @@ namespace TRL
 
 	double cell_thermal_conductivity          = -1.E10;
 	double cell_total_volumetric_heat_capacity= -1.E10;
-	double cell_thermal_energy                = -1.E10;
 	double cell_ice_saturation                = -1.E10;
-	material_data(cell->center()[0],average_cell_temperature,cell->diameter(),
+	material_data(cell->center()[0],average_cell_temperature,
 		      cell_thermal_conductivity,cell_total_volumetric_heat_capacity,
-		      cell_thermal_energy,cell_ice_saturation);
+		      cell_ice_saturation);
 
-	column_thermal_energy+=cell_thermal_energy;
+	column_thermal_energy+=
+	  cell_thermal_energy(cell->center()[0],average_cell_temperature,cell->diameter());
 
 	for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
 	  {
@@ -1062,10 +736,10 @@ namespace TRL
 
 	double cell_thermal_conductivity          = -1.E10;
 	double cell_total_volumetric_heat_capacity= -1.E10;
-	double cell_thermal_energy                = -1.E10;
 	double cell_ice_saturation                = -1.E10;
-	material_data(cell->center()[0],average_cell_temperature,cell->diameter(),
-		      cell_thermal_conductivity,cell_total_volumetric_heat_capacity,cell_thermal_energy,cell_ice_saturation);
+	material_data(cell->center()[0],average_cell_temperature,
+		      cell_thermal_conductivity,cell_total_volumetric_heat_capacity,
+		      cell_ice_saturation);
 
 	ice_saturation_int.push_back(cell_ice_saturation);
       }
@@ -1276,15 +950,12 @@ namespace TRL
     solution.reinit (dof_handler.n_dofs());
     old_solution.reinit (dof_handler.n_dofs());
     initial_condition_temperature();
-
     {
       double k=0.;
       double Cp=0.;
-      double E=0.;
       double Si=0.;
       material_data(-parameters.material_0_depth-0.5*parameters.material_0_thickness,
-		    25.,parameters.domain_size/pow(parameters.refinement_level,2.),
-		    k,Cp,E,Si);
+		    25.,k,Cp,Si);
 	    
       std::cout.setf( std::ios::fixed);
       std::cout.precision(3);
@@ -1296,8 +967,7 @@ namespace TRL
 		<< "Cp(@25C):" << Cp/1.E6 << " MJ/m3K\n";
 
       material_data(-parameters.material_1_depth-0.5*parameters.material_1_thickness,
-		    25.,parameters.domain_size/pow(parameters.refinement_level,2.),
-		    k,Cp,E,Si);
+		    25.,k,Cp,Si);
       std::cout << "\t\tLayer 2: from "
 		<< parameters.material_1_depth << " to "
 		<< parameters.material_1_depth+parameters.material_1_thickness << "\t"
@@ -1305,8 +975,7 @@ namespace TRL
 		<< "Cp(@25C):" << Cp/1.E6 << " MJ/m3K\n";
 	    
       material_data(-parameters.material_2_depth-0.5*parameters.material_2_thickness,
-		    25.,parameters.domain_size/pow(parameters.refinement_level,2.),
-		    k,Cp,E,Si);
+		    25.,k,Cp,Si);
       std::cout << "\t\tLayer 3: from "
 		<< parameters.material_2_depth << " to "
 		<< parameters.material_2_depth+parameters.material_2_thickness << "\t"
@@ -1314,8 +983,7 @@ namespace TRL
 		<< "Cp(@25C):" << Cp/1.E6 << "MJ/m3K\n";
 
       material_data(-parameters.material_3_depth-0.5*parameters.material_3_thickness,
-		    25.,parameters.domain_size/pow(parameters.refinement_level,2.),
-		    k,Cp,E,Si);
+		    25.,k,Cp,Si);
       std::cout << "\t\tLayer 4: from "
 		<< parameters.material_3_depth << " to "
 		<< parameters.material_3_depth+parameters.material_3_thickness << "\t"
@@ -1323,15 +991,13 @@ namespace TRL
 		<< "Cp(@25C):" << Cp/1.E6 << "MJ/m3K\n";
 
       material_data(-parameters.material_4_depth-0.5*parameters.material_4_thickness,
-		    25.,parameters.domain_size/pow(parameters.refinement_level,2.),
-		    k,Cp,E,Si);
+		    25.,k,Cp,Si);
       std::cout << "\t\tLayer 5: from "
 		<< parameters.material_4_depth << " to "
 		<< parameters.material_4_depth+parameters.material_4_thickness << "\t"
 		<< "k(@25C) :" << k << " W/mK\t"
 		<< "Cp(@25C):" << Cp/1.E6 << "MJ/m3K\n";
     }
-
     int output_count=0;
     for (timestep_number=1;//,time=time_step;
 	 timestep_number<=timestep_number_max;//time<=time_max;
@@ -1407,21 +1073,6 @@ namespace TRL
 
 int main (int argc, char *argv[])
 {
-  // Material *sand1 = new Material("sand");
-  // Material *sand2 = new Material(7,8,9);
-
-  // PorousMaterial *soil1 = new PorousMaterial("land");
-  // PorousMaterial *soil2 = new PorousMaterial(14,15,16);
-  
-  // std::cout << "Sand 1 thermal conductivity: "
-  // 	    << sand1->thermal_conductivity() << "\n"
-  // 	    << "Sand 2 thermal conductivity: "
-  // 	    << sand2->thermal_conductivity() << "\n\n"
-  // 	    << "Soil 1 thermal conductivity: "
-  // 	    << soil1->thermal_conductivity() << "\n"
-  //   	    << "Soil 2 thermal conductivity: "
-  // 	    << soil2->thermal_conductivity() << "\n";
-
   try
     {
       using namespace TRL;
