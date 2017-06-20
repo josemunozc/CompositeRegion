@@ -958,7 +958,7 @@ namespace TRL
 		    25.,k,Cp,Si);
 	    
       std::cout.setf( std::ios::fixed);
-      std::cout.precision(3);
+      std::cout.precision(9);
       std::cout << "\tPosition of material layers:\n"
 		<< "\t\tLayer 1: from "
 		<< parameters.material_0_depth << " to "

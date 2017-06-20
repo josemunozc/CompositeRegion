@@ -1,62 +1,62 @@
 # Time stepping control
 subsection time stepping
-	set timestep number max	= 20 # maximum number of timesteps to execute (Multiply) 30*24*300
-	set time step		= 3600 # simulation time step (Divide) 3600/300 (300=5min*60sec)
- 	set theta scheme value	= 1.0
+  set timestep number max	= 20 # maximum number of timesteps to execute (Multiply) 30*24*300
+  set time step			= 3600 # simulation time step (Divide) 3600/300 (300=5min*60sec)
+  set theta scheme value	= 1.0
 end
 
 subsection geometric data
-	set domain size           =  0.610  # (m)
-	set number of layers      =  5      # Positive integer (1-5)
-	set material 0 thickness  =  0.103 	# (m)
-	set material 1 thickness  =  0.004 	# (m)
-	set material 2 thickness  =  0.045 	# (m)
-	set material 3 thickness  =  0.003 	# (m)
-	set material 4 thickness  =  0.455 	# (m)
-	set material 0 depth      =  0.0	# (m) depth of layer's top surface
-	set material 1 depth      =  0.103	# (m)
-	set material 2 depth      =  0.107	# (m)
-	set material 3 depth      =  0.152	# (m)
-	set material 4 depth      =  0.155	# (m)
-	set refinement level      = 10 #
+  set domain size           =  0.610  # (m)
+  set number of layers      =  5      # Positive integer (1-5)
+  set material 0 thickness  =  0.103 	# (m)
+  set material 1 thickness  =  0.004 	# (m)
+  set material 2 thickness  =  0.045 	# (m)
+  set material 3 thickness  =  0.003 	# (m)
+  set material 4 thickness  =  0.455 	# (m)
+  set material 0 depth      =  0.0	# (m) depth of layer's top surface
+  set material 1 depth      =  0.103	# (m)
+  set material 2 depth      =  0.107	# (m)
+  set material 3 depth      =  0.152	# (m)
+  set material 4 depth      =  0.155	# (m)
+  set refinement level      = 10 #
 end
 
 subsection material data
-    #
-    #layer 0
-    #
-    set material 0 name				= quartz_1
-    set material 0 degree of saturation		=    0.5	# (dimensionless)
-    set material 0 porosity			=    0.37	# (dimensionless)
-    set material 0 thermal conductivity relationship = donazzi
-    # 
-    #layer 1
-    #
-    set material 1 name				= pvc_1
-    set material 1 degree of saturation		=    0.0  # (dimensionless)
-    set material 1 porosity			=    0.0  # (dimensionless)
-    set material 1 thermal conductivity relationship = bulk
-    #
-    #layer 2
-    #
-    set material 2 name				= glass_beads
-    set material 2 degree of saturation		=    0.000  # (dimensionless)
-    set material 2 porosity			=    0.360  #0.343 # (dimensionless)
-    set material 2 thermal conductivity relationship = haigh
-    #
-    #layer 3
-    #
-    set material 3 name				= pvc_2
-    set material 3 degree of saturation		=    0.0  # (dimensionless)
-    set material 3 porosity			=    0.00 # (dimensionless)
-    set material 3 thermal conductivity relationship = bulk
-    #
-    #layer 4
-    #
-    set material 4 name				= quartz_1
-    set material 4 degree of saturation		=    1.0  # (dimensionless)
-    set material 4 porosity			=    0.37 # (dimensionless)
-    set material 4 thermal conductivity relationship = donazzi
+  #
+  #layer 0
+  #
+  set material 0 name			= quartz_1
+  set material 0 degree of saturation	=  1.0	# (dimensionless)
+  set material 0 porosity		=  0.37	# (dimensionless)
+  set material 0 thermal conductivity relationship = donazzi
+  # 
+  #layer 1
+  #
+  set material 1 name			= quartz_1
+  set material 1 degree of saturation	=  1.0  # (dimensionless)
+  set material 1 porosity		=  0.37  # (dimensionless)
+  set material 1 thermal conductivity relationship = donazzi
+  #
+  #layer 2
+  #
+  set material 2 name			= quartz_1
+  set material 2 degree of saturation	=  1.0  # (dimensionless)
+  set material 2 porosity		=  0.37  #0.343 # (dimensionless)
+  set material 2 thermal conductivity relationship = donazzi
+  #
+  #layer 3
+  #
+  set material 3 name			= quartz_1
+  set material 3 degree of saturation	=  1.0  # (dimensionless)
+  set material 3 porosity		=  0.37 # (dimensionless)
+  set material 3 thermal conductivity relationship = donazzi
+  #
+  #layer 4
+  #
+  set material 4 name			= quartz_1
+  set material 4 degree of saturation	=  1.0  # (dimensionless)
+  set material 4 porosity		=  0.37 # (dimensionless)
+  set material 4 thermal conductivity relationship = donazzi
 end
 
 # --------------------------------------------------
@@ -71,13 +71,12 @@ subsection boundary conditions
   set point source depth	=  0.0  # (m)
   
   #top boundary
-  #set fixed at top		= true    # set to true to 1st kind b.c.
   set top fixed value file	= surface_temperature_dry.txt
-  set boundary condition top	= first   #
+  set boundary condition top	= second   #
   
   #bottom boundary
   set fixed at bottom		= false    #
-  set bottom fixed value	= 21.764	# 
+  set bottom fixed value	= 21.764   # 
 
   #initial condition
   set initial condition file	= initial_condition_analytic.txt
@@ -86,8 +85,8 @@ end
 # --------------------------------------------------
 # Other
 subsection other options
-	set output frequency	= 3600	# every X seconds, positive integer, set to 0 to prevent output file generation
-	set output directory	= output
-	set output file		= output_data_analytic.txt #
-	set output data in terminal = true #
+  set output frequency	= 3600	# every X seconds, positive integer, set to 0 to prevent output file generation
+  set output directory	= output
+  set output file		= output_data_analytic.txt #
+  set output data in terminal = true #
 end
