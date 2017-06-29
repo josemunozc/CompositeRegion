@@ -280,24 +280,23 @@ namespace TRL
     /*
      * These variables are assumed to be constants. That's why we defined them inside the function.
      * */
-    unsigned int layer_number
-      =find_layer(cell_center);
+    unsigned int layer_number=
+      find_layer(cell_center);
     std::string material_name  =std::get<0>(layer_data[layer_number]);
     double porosity            =std::get<1>(layer_data[layer_number]);
     double degree_of_saturation=std::get<2>(layer_data[layer_number]);
     std::string relationship   =std::get<3>(layer_data[layer_number]);
     
-    PorousMaterial *porous_material = new PorousMaterial(material_name,
-							 porosity,
-							 degree_of_saturation);
-    thermal_conductivity
-      =porous_material->thermal_conductivity(relationship);
-    total_volumetric_heat_capacity
-      =porous_material->volumetric_heat_capacity(cell_temperature);
-    ice_saturation
-      =porous_material->degree_of_saturation_ice(cell_temperature);
-
-
+    PorousMaterial porous_material(material_name,
+				   porosity,
+				   degree_of_saturation);
+    thermal_conductivity=
+      porous_material.thermal_conductivity(relationship);
+    total_volumetric_heat_capacity=
+      porous_material.volumetric_heat_capacity(cell_temperature);
+    ice_saturation=
+      porous_material.degree_of_saturation_ice(cell_temperature);
+    
     if (thermal_conductivity<0. || total_volumetric_heat_capacity<0.)
       {
 	std::cout << "thermal_conductivity: " << thermal_conductivity << "\t"
@@ -319,11 +318,11 @@ namespace TRL
     std::string material_name  =std::get<0>(layer_data[layer_number]);
     double porosity            =std::get<1>(layer_data[layer_number]);
     double degree_of_saturation=std::get<2>(layer_data[layer_number]);
-
-    PorousMaterial *porous_material = new PorousMaterial(material_name,
-							 porosity,
-							 degree_of_saturation);
-    return cell_diameter*porous_material->thermal_energy(cell_temperature);
+    
+    PorousMaterial porous_material(material_name,
+				   porosity,
+				   degree_of_saturation);
+    return cell_diameter*porous_material.thermal_energy(cell_temperature);
   }
   
   template <int dim>
@@ -788,7 +787,7 @@ namespace TRL
 
 	double phase=0;
 	double average=5;
-	double amplitude=10.;
+	double amplitude=2.;
 	double period=24.*3600.;
 	old_room_temperature    = average+amplitude*cos((2.*M_PI/period)*((timestep_number-1)*time_step-phase));
 	new_room_temperature    = average+amplitude*cos((2.*M_PI/period)*( timestep_number   *time_step-phase));
@@ -798,25 +797,25 @@ namespace TRL
     
     if (parameters.point_source==true)
       {
-	if (point_source_magnitudes.size()==0)
-	  {
-	    DataTools data_tools;
-	    std::vector<std::string> filenames;
-	    filenames.push_back(parameters.point_source_file);
-	    data_tools.read_data (filenames,
-				  point_source_magnitudes);
+    	if (point_source_magnitudes.size()==0)
+    	  {
+    	    DataTools data_tools;
+    	    std::vector<std::string> filenames;
+    	    filenames.push_back(parameters.point_source_file);
+    	    data_tools.read_data (filenames,
+    				  point_source_magnitudes);
 
-	    std::cout << "\n\tPoint source active at: " << parameters.point_source_depth
-		      << "\n\tAvailable point source entries: "
-		      << point_source_magnitudes.size()
-		      << std::endl << std::endl;
-	  }
-	// old_point_source_magnitude =point_source_magnitudes[timestep_number-1][1];
-	// new_point_source_magnitude =point_source_magnitudes[timestep_number  ][1];
-	old_point_source_magnitude=
-	  -point_source_magnitudes[timestep_number-1][1]*sin((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-	new_point_source_magnitude=
-	  -point_source_magnitudes[timestep_number  ][1]*sin((2.*M_PI/86400)*((timestep_number  )*time_step-54000));
+    	    std::cout << "\n\tPoint source active at: " << parameters.point_source_depth
+    		      << "\n\tAvailable point source entries: "
+    		      << point_source_magnitudes.size()
+    		      << std::endl << std::endl;
+    	  }
+    	// old_point_source_magnitude =point_source_magnitudes[timestep_number-1][1];
+    	// new_point_source_magnitude =point_source_magnitudes[timestep_number  ][1];
+    	old_point_source_magnitude=
+    	  -point_source_magnitudes[timestep_number-1][1]*sin((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
+    	new_point_source_magnitude=
+    	  -point_source_magnitudes[timestep_number  ][1]*sin((2.*M_PI/86400)*((timestep_number  )*time_step-54000));
       }
   }
 
@@ -959,7 +958,7 @@ namespace TRL
 	 ++timestep_number)//time+=time_step
       {
 	update_met_data();
-	    
+	
 	int iteration=0;
 	double total_error =1.E10;
 	double solution_l1_norm_previous_iteration;
@@ -974,21 +973,21 @@ namespace TRL
 	      1.-std::fabs(solution_l1_norm_previous_iteration/solution_l1_norm_current_iteration);
 	    iteration++;
 	  }while (std::fabs(total_error)>5E-4);
-		  
+	
 	time+=time_step;
-
+	
 	if (parameters.output_data_in_terminal==true)
 	  std::cout << "Time step " << timestep_number << "\ttime: " << time/60 << " min\tDt: "
 		    << time_step << " s\t#it: " << iteration
 		    << "\n";
-
+	
 	if (parameters.output_frequency!=0 &&
 	    time>output_count*parameters.output_frequency)
 	  {
 	    output_results();
 	    output_count++;
 	  }
-	//fill_output_vectors();
+	fill_output_vectors();
 	old_solution=solution;
       }
     output_file.close();

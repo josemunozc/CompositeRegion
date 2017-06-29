@@ -1,6 +1,6 @@
 # Time stepping control
 subsection time stepping
-  set timestep number max	= 200 # maximum number of timesteps to execute (Multiply) 30*24*300
+  set timestep number max	= 300 # maximum number of timesteps to execute (Multiply) 30*24*300
   set time step			= 3600 # simulation time step (Divide) 3600/300 (300=5min*60sec)
   set theta scheme value	= 1.0
 end
