@@ -30,6 +30,6 @@ ADD_CUSTOM_TARGET(release
   COMMENT "Switch CMAKE_BUILD_TYPE to Release"
   )
 
-add_custom_command(run
+ADD_CUSTOM_TARGET(run
     COMMAND ./mycode input.prm
   )
