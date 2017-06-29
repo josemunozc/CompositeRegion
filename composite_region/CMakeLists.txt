@@ -11,7 +11,7 @@ INCLUDE_DIRECTORIES(/home/zerpiko/git/libraries)
 
 ADD_LIBRARY(mylib /home/zerpiko/git/libraries/DataTools.cpp /home/zerpiko/git/libraries/Names.cpp /home/zerpiko/git/libraries/Material.cpp /home/zerpiko/git/libraries/PorousMaterial.cpp)
 
-DEAL_II_SETUP_TARGET(mylib)
+#ADD_LIBRARY(mylib /home/zerpiko/git/libraries/Material.cpp /home/zerpiko/git/libraries/PorousMaterial.cpp)
 
 ADD_EXECUTABLE(mycode composite_region.cc)
 DEAL_II_SETUP_TARGET(mycode)
@@ -28,4 +28,8 @@ ADD_CUSTOM_TARGET(release
   COMMAND ${CMAKE_COMMAND} -DCMAKE_BUILD_TYPE=Release ${CMAKE_SOURCE_DIR}
   COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target all
   COMMENT "Switch CMAKE_BUILD_TYPE to Release"
+  )
+
+add_custom_command(run
+    COMMAND ./mycode input.prm
   )

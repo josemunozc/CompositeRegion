@@ -363,62 +363,6 @@ namespace TRL
     return (-1.*convective_coefficient*(temperature_gradient)); //(W/m3)
   }
 
-  //  template <int dim>
-  //  double Heat_Pipe<dim>::snow_surface_heat_flux(double surface_temperature)
-  //  {
-  // double sensible_flux=10.; // CANNOT BE ZERO
-  // const double gravity_acceleration = 9.81; //m/s
-
-  // double Obukhov_length=
-  // 		  (-1.*parameters.virtual_temperature*parameters.density_air*parameters.specific_heat_capacity_air*pow(parameters.friction_velocity,3))
-  // 		  /(parameters.von_Karman_constant*gravity_acceleration*sensible_flux);
-
-  // double zeta=
-  // 		  parameters.reference_height/Obukhov_length;
-
-  // double momentum_stratification_factor=
-  // 		  1.+(0.7*zeta)+(0.75*zeta*(exp(6.-0.35*zeta),(-0.35*zeta)));
-
-  // double humidity_stratification_factor=
-  // 		  momentum_stratification_factor;
-
-  // double sensible_coefficient=
-  // 		  pow(parameters.von_Karman_constant,2)/
-  // 		  ((log(parameters.reference_height/parameters.roughness_length            )-momentum_stratification_factor)
-  // 				  *(log(parameters.reference_height/parameters.temperature_roughness_length)-humidity_stratification_factor));
-
-  // sensible_flux=
-  // 		  parameters.density_air*parameters.specific_heat_capacity_air*sensible_coefficient*parameters.air_speed
-  // 		  *(parameters.height_temperature-surface_temperature/*parameters.surface_temperature*/);
-
-  // /*
-  //  * Are we considering moisture flow?? In principle we should, this would take into account the formation of snow
-  //  * through condensation of water on the soil surface and eventual evaporation (thawing?). But I thought that we
-  //  * were going to start with an assumption of sudden appearance of snow on the soil surface without worrying
-  //  * about how it got there... we need to clarify this
-  //  * */
-  // double latent_coefficient=
-  // 		  sensible_coefficient;
-
-  // double latent_flux=
-  // 		  parameters.density_air*parameters.vaporization_latent_heat*latent_coefficient*parameters.air_speed
-  // 		  *(parameters.height_humidity-parameters.surface_humidity);
-  // //-----------------------------------------------------------------------------------------------------------------
-
-  // double short_wave_flux=
-  // 		  parameters.short_wave_radiation*(1.-parameters.albedo);
-
-  // double long_wave_flux=
-  // 		  parameters.Boltzmann_constant*
-  // 		  (parameters.surface_emissivity*pow(parameters.surface_temperature,4)
-  //         -parameters.atmospher_emissivity*pow(parameters.height_temperature,4));
-
-  // double conductance_flux=
-  // 		  parameters.material_0_thermal_conductivity*parameters.surface_temperature/parameters.material_0_depth;
-
-  // return (latent_flux+old_sensible_flux_iteration+short_wave_flux+long_wave_flux+conductance_flux);
-  //  }
-
   template <int dim>
   void Heat_Pipe<dim>::setup_system_temperature()
   {
@@ -464,6 +408,8 @@ namespace TRL
     Vector<double>     cell_rhs                (dofs_per_cell);
 	  
     std::vector<unsigned int> local_dof_indices (fe.dofs_per_cell);
+    std::vector<double> old_function_values     (n_q_points);
+    std::vector<double> new_function_values     (n_q_points);
     column_thermal_energy= 0.;
 	  
     typename DoFHandler<dim>::active_cell_iterator
@@ -471,31 +417,32 @@ namespace TRL
       endc = dof_handler.end();
     for (; cell!=endc; ++cell)
       {
-	fe_values.reinit (cell);
 	cell_mass_matrix        = 0;
 	cell_laplace_matrix_new = 0;
 	cell_laplace_matrix_old = 0;
 	cell_rhs                = 0;
+	fe_values.reinit (cell);
+	fe_values.get_function_values(old_solution,old_function_values);
+	fe_values.get_function_values(    solution,new_function_values);
 	
-	double average_cell_temperature=
-	  (   theta_temperature)*VectorTools::point_value(dof_handler,    solution,Point<dim>(cell->center()[0]))+
-	  (1.-theta_temperature)*VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell->center()[0]));
-
-	double old_cell_heat_loss = thermal_losses(average_cell_temperature-old_room_temperature);
-	double new_cell_heat_loss = thermal_losses(average_cell_temperature-new_room_temperature);
-
-	double cell_thermal_conductivity          = -1.E10;
-	double cell_total_volumetric_heat_capacity= -1.E10;
-	double cell_ice_saturation                = -1.E10;
-	material_data(cell->center()[0],average_cell_temperature,
-		      cell_thermal_conductivity,cell_total_volumetric_heat_capacity,
-		      cell_ice_saturation);
-
-	column_thermal_energy+=
-	  cell_thermal_energy(cell->center()[0],average_cell_temperature,cell->diameter());
-
 	for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
 	  {
+	    double average_cell_temperature=
+	      (   theta_temperature)*new_function_values[q_point]+
+	      (1.-theta_temperature)*old_function_values[q_point];
+	    
+	    double old_cell_heat_loss = thermal_losses(average_cell_temperature-old_room_temperature);
+	    double new_cell_heat_loss = thermal_losses(average_cell_temperature-new_room_temperature);
+	    
+	    double cell_thermal_conductivity          = -1.E10;
+	    double cell_total_volumetric_heat_capacity= -1.E10;
+	    double cell_ice_saturation                = -1.E10;
+	    material_data(cell->center()[0],average_cell_temperature,
+			  cell_thermal_conductivity,cell_total_volumetric_heat_capacity,
+			  cell_ice_saturation);
+	    
+	    column_thermal_energy+=
+	      cell_thermal_energy(cell->center()[0],average_cell_temperature,cell->diameter());
 	    /*
 	     * Here is were we assemble the matrices and vectors that appear after
 	     * we discretize the problem in space and time using the finite element
@@ -724,29 +671,45 @@ namespace TRL
   template <int dim>
   void Heat_Pipe<dim>::output_results()
   {
+    QGauss<dim>   quadrature_formula(3);
+    FEValues<dim> fe_values(fe, quadrature_formula,
+			    update_values | update_gradients |
+			    update_quadrature_points | update_JxW_values);
+    const unsigned int n_q_points      = quadrature_formula.size();
+    std::vector<double> old_function_values     (n_q_points);
+    std::vector<double> new_function_values     (n_q_points);    
+    
     std::vector<double> ice_saturation_int;
     typename DoFHandler<dim>::active_cell_iterator
       cell = dof_handler.begin_active(),
       endc = dof_handler.end();
     for (; cell!=endc; ++cell)
       {
-	double average_cell_temperature=
-	  (   theta_temperature)*VectorTools::point_value(dof_handler,    solution,Point<dim>(cell->center()[0]))+
-	  (1.-theta_temperature)*VectorTools::point_value(dof_handler,old_solution,Point<dim>(cell->center()[0]));
-
+	fe_values.reinit (cell);
+	fe_values.get_function_values(old_solution,old_function_values);
+	fe_values.get_function_values(    solution,new_function_values);
+	
+	double average_cell_temperature=0.;
+	for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
+	  {
+	    average_cell_temperature+=
+	      (   theta_temperature)*new_function_values[q_point]+
+	      (1.-theta_temperature)*new_function_values[q_point];
+	  }
+	average_cell_temperature/=n_q_points;
+	
 	double cell_thermal_conductivity          = -1.E10;
 	double cell_total_volumetric_heat_capacity= -1.E10;
 	double cell_ice_saturation                = -1.E10;
 	material_data(cell->center()[0],average_cell_temperature,
 		      cell_thermal_conductivity,cell_total_volumetric_heat_capacity,
 		      cell_ice_saturation);
-
+	
 	ice_saturation_int.push_back(cell_ice_saturation);
       }
     const Vector<double> ice_saturation(ice_saturation_int.begin(),ice_saturation_int.end());
 
     DataOut<dim> data_out;
-
     data_out.attach_dof_handler(dof_handler);
     data_out.add_data_vector(solution,"solution");
     data_out.add_data_vector(ice_saturation,"ice_saturation");
@@ -803,8 +766,10 @@ namespace TRL
 		 t<table_temperature_surface[table_temperature_surface.size()-1].first; t+=time_step)
 	      {
 		std::vector<double> row_interpolated_temperature_surface;
-		row_interpolated_temperature_surface.push_back(t);
-		row_interpolated_temperature_surface.push_back(data_tools.interpolate_data(table_temperature_surface, t));
+		row_interpolated_temperature_surface
+		  .push_back(t);
+		row_interpolated_temperature_surface
+		  .push_back(data_tools.interpolate_data(table_temperature_surface, t));
 
 		interpolated_temperature_surface.push_back(row_interpolated_temperature_surface);
 
@@ -814,33 +779,23 @@ namespace TRL
 
 		interpolated_temperature_room.push_back(row_interpolated_temperature_room);
 	      }
-
-	    //			  for (unsigned int i=0; i<interpolated_temperature_surface.size(); i++)
-	    //			  {
-	    //				  std::cout << interpolated_temperature_surface[i][0] << "\t"
-	    //						  << interpolated_temperature_surface[i][1] << "\t"
-	    //						  << interpolated_temperature_room[i][1] << "\n";
-	    //			  }
-
 	  }
-
+	
 	// old_room_temperature    = interpolated_temperature_room[timestep_number-1][1];
 	// new_room_temperature    = interpolated_temperature_room[timestep_number  ][1];
 	// old_surface_temperature = interpolated_temperature_surface[timestep_number-1][1];
 	// new_surface_temperature = interpolated_temperature_surface[timestep_number  ][1];
-		  
-	//		  old_room_temperature    = met_data[timestep_number-1][1];
-	//		  new_room_temperature    = met_data[timestep_number  ][1];
-	//		  old_surface_temperature = met_data[timestep_number-1][0];
-	//		  new_surface_temperature = met_data[timestep_number  ][0];
 
-	old_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-	new_room_temperature    = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
-	old_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-	new_surface_temperature = 15.+10.*cos((2.*M_PI/86400)*(timestep_number*time_step-54000));
+	double phase=0;
+	double average=5;
+	double amplitude=10.;
+	double period=24.*3600.;
+	old_room_temperature    = average+amplitude*cos((2.*M_PI/period)*((timestep_number-1)*time_step-phase));
+	new_room_temperature    = average+amplitude*cos((2.*M_PI/period)*( timestep_number   *time_step-phase));
+	old_surface_temperature = average+amplitude*cos((2.*M_PI/period)*((timestep_number-1)*time_step-phase));
+	new_surface_temperature = average+amplitude*cos((2.*M_PI/period)*( timestep_number   *time_step-phase));
       }
-
-
+    
     if (parameters.point_source==true)
       {
 	if (point_source_magnitudes.size()==0)
@@ -855,13 +810,13 @@ namespace TRL
 		      << "\n\tAvailable point source entries: "
 		      << point_source_magnitudes.size()
 		      << std::endl << std::endl;
-
-
 	  }
 	// old_point_source_magnitude =point_source_magnitudes[timestep_number-1][1];
 	// new_point_source_magnitude =point_source_magnitudes[timestep_number  ][1];
-	old_point_source_magnitude =-point_source_magnitudes[timestep_number-1][1]*sin((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
-	new_point_source_magnitude =-point_source_magnitudes[timestep_number  ][1]*sin((2.*M_PI/86400)*((timestep_number  )*time_step-54000));
+	old_point_source_magnitude=
+	  -point_source_magnitudes[timestep_number-1][1]*sin((2.*M_PI/86400)*((timestep_number-1)*time_step-54000));
+	new_point_source_magnitude=
+	  -point_source_magnitudes[timestep_number  ][1]*sin((2.*M_PI/86400)*((timestep_number  )*time_step-54000));
       }
   }
 
@@ -958,7 +913,7 @@ namespace TRL
 		    25.,k,Cp,Si);
 	    
       std::cout.setf( std::ios::fixed);
-      std::cout.precision(9);
+      std::cout.precision(3);
       std::cout << "\tPosition of material layers:\n"
 		<< "\t\tLayer 1: from "
 		<< parameters.material_0_depth << " to "
@@ -1011,21 +966,12 @@ namespace TRL
 	double solution_l1_norm_current_iteration;
 	do
 	  {
-	    //			  if (iteration!=0 && iteration%5==0)
-	    //				  time_step/=2.;
-
 	    assemble_system_temperature();
-
 	    solution_l1_norm_previous_iteration=solution.l2_norm();
 	    solve_temperature();
 	    solution_l1_norm_current_iteration=solution.l2_norm();
-			  
 	    total_error=
 	      1.-std::fabs(solution_l1_norm_previous_iteration/solution_l1_norm_current_iteration);
-
-	    // std::cout << "\titeration " << iteration << "\tT@(0.0): "
-	    //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.00)) << "\n";
-
 	    iteration++;
 	  }while (std::fabs(total_error)>5E-4);
 		  
@@ -1034,17 +980,6 @@ namespace TRL
 	if (parameters.output_data_in_terminal==true)
 	  std::cout << "Time step " << timestep_number << "\ttime: " << time/60 << " min\tDt: "
 		    << time_step << " s\t#it: " << iteration
-	    //  << "\tEnergy_surface: " << 100.*time << " J"
-	    //  << "\tEnergy_column: " << column_thermal_energy << " J"
-	    //  << "\tEnergy_error: "
-	    //  << -100.*time-column_thermal_energy << "\t"
-	    //  << "Ta:\t" << new_surface_temperature << "\t"
-	    //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.00)) << "\t"
-	    //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.20)) << "\t"
-	    //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.40)) << "\t"
-	    //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.60)) << "\t"
-	    //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.80)) << "\t"
-	    //  << VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*1.00)) << "\t"
 		    << "\n";
 
 	if (parameters.output_frequency!=0 &&
@@ -1053,17 +988,8 @@ namespace TRL
 	    output_results();
 	    output_count++;
 	  }
-	fill_output_vectors();
-
-	// if (time==35.*3600.)
-	//   for (unsigned int i=0; i<62; i++)
-	//     std::cout << 0.01*i << "\t"
-	// 		<< VectorTools::point_value(dof_handler,solution,Point<dim>(-1.*0.01*i)) << "\n";
-		  
+	//fill_output_vectors();
 	old_solution=solution;
-
-	//		  if (iteration<5)
-	//			  time_step+=2.;
       }
     output_file.close();
     std::cout << "\t Job Done!!"
