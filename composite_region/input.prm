@@ -1,7 +1,7 @@
 # Time stepping control
 subsection time stepping
   set timestep number max	= 300 # maximum number of timesteps to execute (Multiply) 30*24*300
-  set time step			= 3600 # simulation time step (Divide) 3600/300 (300=5min*60sec)
+  set time step			= 180 # simulation time step (Divide) 3600/300 (300=5min*60sec)
   set theta scheme value	= 1.0
 end
 
@@ -72,20 +72,20 @@ subsection boundary conditions
   
   #top boundary
   set top fixed value file	= surface_temperature_dry.txt
-  set boundary condition top	= first   #
+  set boundary condition top	= second   #
   
   #bottom boundary
-  set fixed at bottom		= false    #
-  set bottom fixed value	= 21.764   # 
+  set fixed at bottom		= true    #
+  set bottom fixed value	= 1   # 
 
   #initial condition
-  set initial condition file	= initial_condition_analytic.txt
+  set initial condition file	= initial_condition_trial.txt
 end
 
 # --------------------------------------------------
 # Other
 subsection other options
-  set output frequency	= 3600	# every X seconds, positive integer, set to 0 to prevent output file generation
+  set output frequency	= 180	# every X seconds, positive integer, set to 0 to prevent output file generation
   set output directory	= output
   set output file		= output_data_analytic.txt #
   set output data in terminal = true #

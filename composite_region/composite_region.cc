@@ -394,7 +394,7 @@ namespace TRL
 			    update_values | update_gradients |
 			    update_quadrature_points | update_JxW_values);
     FEFaceValues<dim> fe_face_values(fe, face_quadrature_formula,
-				     update_values | update_gradients |
+				     update_values | update_gradients | update_normal_vectors|
 				     update_quadrature_points | update_JxW_values);
 	  
     const unsigned int dofs_per_cell   = fe.dofs_per_cell;
@@ -405,12 +405,17 @@ namespace TRL
     FullMatrix<double> cell_laplace_matrix_new (dofs_per_cell,dofs_per_cell);
     FullMatrix<double> cell_laplace_matrix_old (dofs_per_cell,dofs_per_cell);
     Vector<double>     cell_rhs                (dofs_per_cell);
+
+    Vector<double> old_temperature_values (dofs_per_cell);
+    Vector<double> new_temperature_values (dofs_per_cell);
 	  
     std::vector<unsigned int> local_dof_indices (fe.dofs_per_cell);
     std::vector<double> old_function_values     (n_q_points);
     std::vector<double> new_function_values     (n_q_points);
     column_thermal_energy= 0.;
-	  
+    double flux_top=0.;
+    double flux_bottom=0.;
+    
     typename DoFHandler<dim>::active_cell_iterator
       cell = dof_handler.begin_active(),
       endc = dof_handler.end();
@@ -423,6 +428,16 @@ namespace TRL
 	fe_values.reinit (cell);
 	fe_values.get_function_values(old_solution,old_function_values);
 	fe_values.get_function_values(    solution,new_function_values);
+
+	new_temperature_values.reinit(cell->get_fe().dofs_per_cell);
+	old_temperature_values.reinit(cell->get_fe().dofs_per_cell);
+
+	cell->get_dof_values(solution    ,new_temperature_values);
+	cell->get_dof_values(old_solution,old_temperature_values);
+	
+	double cell_thermal_conductivity          = -1.E10;
+	double cell_total_volumetric_heat_capacity= -1.E10;
+	double cell_ice_saturation                = -1.E10;
 	
 	for (unsigned int q_point=0; q_point<n_q_points; ++q_point)
 	  {
@@ -433,9 +448,6 @@ namespace TRL
 	    double old_cell_heat_loss = thermal_losses(average_cell_temperature-old_room_temperature);
 	    double new_cell_heat_loss = thermal_losses(average_cell_temperature-new_room_temperature);
 	    
-	    double cell_thermal_conductivity          = -1.E10;
-	    double cell_total_volumetric_heat_capacity= -1.E10;
-	    double cell_ice_saturation                = -1.E10;
 	    material_data(cell->center()[0],average_cell_temperature,
 			  cell_thermal_conductivity,cell_total_volumetric_heat_capacity,
 			  cell_ice_saturation);
@@ -535,9 +547,51 @@ namespace TRL
 			    time_step*(1.-theta_temperature)*
 			    fe_face_values.shape_value(i,q_face_point) *
 			    fe_face_values.JxW(q_face_point);
+			  
+			  flux_top+=
+			    top_inbound_heat_flux_new*
+			    theta_temperature*
+			    fe_face_values.shape_value(i,q_face_point) *
+			    fe_face_values.JxW(q_face_point)
+			    +
+			    top_inbound_heat_flux_old*
+			    (1.-theta_temperature)*
+			    fe_face_values.shape_value(i,q_face_point) *
+			    fe_face_values.JxW(q_face_point);
 			}
 		    }
 		}
+	      else if (cell->face(face)->at_boundary() &&
+		       fabs(cell->face(face)->center()[0]+parameters.domain_size)<0.0001)
+		{
+		  fe_face_values.reinit (cell, face);
+		  for (unsigned int q_face_point=0; q_face_point<n_face_q_points; ++q_face_point)
+		    {
+		      for (unsigned int i=0; i<dofs_per_cell; ++i)
+			{
+			  for (unsigned int j=0; j<dofs_per_cell; ++j)
+			    {			  
+			      flux_bottom+=
+				theta_temperature*
+				cell_thermal_conductivity*
+				fe_face_values.normal_vector(q_face_point)*
+				fe_face_values.shape_grad (i,q_face_point)*
+				new_temperature_values(i)*
+				fe_face_values.shape_value(j,q_face_point)*
+				fe_face_values.JxW(q_face_point)
+				+
+				(1.-theta_temperature)*
+				cell_thermal_conductivity*
+				fe_face_values.normal_vector(q_face_point)*
+				fe_face_values.shape_grad (i,q_face_point)*
+				old_temperature_values(i)*
+				fe_face_values.shape_value(j,q_face_point) *
+				fe_face_values.JxW(q_face_point);			      
+			    }
+			}
+		    }
+		}
+	    
 	  }
 	cell->get_dof_indices (local_dof_indices);
 
@@ -553,6 +607,7 @@ namespace TRL
 	  }
       }
 
+    std::cout << "\tflux top: " << flux_top << "\tflux bottom: " << flux_bottom << "\n";
     Vector<double> tmp(solution.size ());
     /*
      * This is the section where the point source is included.
